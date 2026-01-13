@@ -3,9 +3,15 @@
     use App\Http\Controllers\Api\AlatController;
     use App\Http\Controllers\Api\PeminjamanController;
     use App\Http\Controllers\Api\RuangController;
+    use App\Http\Controllers\Api\DeviceController;
     use Illuminate\Support\Facades\Route;
 
     Route::apiResource('alat', AlatController::class);
+
+
+    // Device
+    Route::apiResource("device", DeviceController::class);
+
 
     //fitur peminjaman 
     route::post('peminjaman', [PeminjamanController::class, 'store']);
