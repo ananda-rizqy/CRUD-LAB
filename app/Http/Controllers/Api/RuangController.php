@@ -44,8 +44,19 @@ public function masuk(Request $request) {
 
 // Tahap 2: Check-out (Keluar)
 public function keluar(Request $request, $id) {
-    $log = PenggunaanRuang::findOrFail($id);
+    // 1. Cari data berdasarkan ID
+    $log = PenggunaanRuang::find($id);
 
+    // 2. CEK: Jika data TIDAK ditemukan (Null)
+    // Ini akan menangkap pengujian negatif Anda (ID yang belum check-in)
+    if (!$log) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Data tidak ditemukan! Anda harus Check-in terlebih dahulu sebelum bisa melakukan Check-out.'
+        ], 404);
+    }
+
+    // 3. Validasi input (Hanya dijalankan jika data $log ditemukan)
     $request->validate([
         'foto_after' => 'required|image|mimes:jpeg,png,jpg|max:2048',
         'kondisi_lab' => 'required|string'
@@ -53,8 +64,8 @@ public function keluar(Request $request, $id) {
         'foto_after.required' => 'Wajib mengunggah foto kondisi akhir laboratorium sebelum check-out!',
         'kondisi_lab.required' => 'Mohon isi keterangan kondisi lab (contoh: Bersih)!'
     ]);
-    
 
+    // 4. Proses upload file
     if ($request->hasFile('foto_after')) {
         $file = $request->file('foto_after');
         $nama_file = time() . '_ruang_after_' . $file->getClientOriginalName();
@@ -62,11 +73,16 @@ public function keluar(Request $request, $id) {
         $log->foto_after = $nama_file;
     }
 
+    // 5. Update sisa data dan simpan
     $log->kondisi_lab = $request->kondisi_lab;
     $log->waktu_keluar = now();
     $log->status = 'selesai';
     $log->save();
 
-    return response()->json(['message' => 'Berhasil Check-out', 'data' => $log]);
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Berhasil Check-out', 
+        'data' => $log
+    ]);
 }
 }
