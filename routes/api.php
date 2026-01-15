@@ -3,10 +3,16 @@
     use App\Http\Controllers\Api\AlatController;
     use App\Http\Controllers\Api\PeminjamanController;
     use App\Http\Controllers\Api\RuangController;
+    use App\Http\Controllers\Api\DeviceController;
     use Illuminate\Support\Facades\Route;
 
     //fitur CRUD alat
     Route::apiResource('alat', AlatController::class);
+
+
+    // Device
+    Route::apiResource("device", DeviceController::class);
+
 
     //fitur riwayat, tambah lab
     Route::get('lab/{kode_lab}/alat', [AlatController::class, 'getAlatByLab']);
