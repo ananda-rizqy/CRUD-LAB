@@ -1,6 +1,7 @@
     <?php
 
 use App\Http\Controllers\Api\AlatController;
+use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\PeminjamanController;
 use App\Http\Controllers\Api\RuangController;
@@ -25,3 +26,5 @@ Route::apiResource('alat', AlatController::class);
 Route::post('ruang/masuk', [RuangController::class, 'masuk']);
 Route::post('ruang/keluar/{id}', [RuangController::class, 'keluar']);
 Route::get('ruang/riwayat', [RuangController::class, 'index']);
+
+Route::apiResource('/messages', ChatController::class);

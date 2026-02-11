@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\DeviceEvent;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DeviceRequest;
 use App\Models\DeviceModel;
@@ -15,7 +16,7 @@ class DeviceController extends Controller
     public function index()
     {
         return response()->json([
-            'data' => DeviceModel::all()
+            'data' => DeviceModel::all(),
         ], 200);
     }
 
@@ -28,10 +29,11 @@ class DeviceController extends Controller
         $validate = $request->validated();
         $device = DeviceModel::create($validate);
 
+        event(new DeviceEvent($device->toArray()));
 
         return response()->json([
             'message' => 'Device berhasil ditambahkan',
-            'data'    => $device
+            'data' => $device,
         ], 201);
     }
 
@@ -43,7 +45,7 @@ class DeviceController extends Controller
         $device = DeviceModel::findOrFail($id);
 
         return response()->json([
-            'data' => $device
+            'data' => $device,
         ], 200);
     }
 
@@ -52,22 +54,23 @@ class DeviceController extends Controller
      */
     public function update(Request $request, string $id)
     {
+        // TODO:clean code ini (jadii validate request)
         $device = DeviceModel::findOrFail($id);
 
         $validate = $request->validate([
             'device_names' => 'required|min:5',
-            'mac_devices'  => 'required',
-            'rssi'         => 'required|numeric',
-            'tipe_device'  => 'required',
-            'x'            => 'required|numeric',
-            'y'            => 'required|numeric'
+            'mac_devices' => 'required',
+            'rssi' => 'required|numeric',
+            'tipe_device' => 'required',
+
         ]);
 
         $device->update($validate);
+        event(new DeviceEvent($device->toArray()));
 
         return response()->json([
             'message' => 'Device berhasil diperbarui',
-            'data'    => $device
+            'data' => $device,
         ], 200);
     }
 
@@ -79,7 +82,7 @@ class DeviceController extends Controller
         DeviceModel::findOrFail($id)->delete();
 
         return response()->json([
-            'message' => 'Device berhasil dihapus'
+            'message' => 'Device berhasil dihapus',
         ], 200);
     }
 }
