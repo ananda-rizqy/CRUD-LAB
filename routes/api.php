@@ -9,14 +9,8 @@
     //fitur CRUD alat
     Route::apiResource('alat', AlatController::class);
 
-
     // Device
     Route::apiResource("device", DeviceController::class);
-
-
-    //fitur riwayat, tambah lab
-    Route::get('lab/{kode_lab}/alat', [AlatController::class, 'getAlatByLab']);
-    Route::get('lab/daftar', [AlatController::class, 'daftarLab']);
 
     //fitur peminjaman dan pengembalian alat
     route::post('peminjaman', [PeminjamanController::class, 'store']);
