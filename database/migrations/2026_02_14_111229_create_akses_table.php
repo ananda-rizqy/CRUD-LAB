@@ -14,11 +14,9 @@ return new class extends Migration
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('nim')->unique()->nullable(); // ID unik (NIM/NIP)
+            $table->string('nim_nip')->unique()->nullable(); // ID unik (NIM/NIP)
             $table->string('email')->unique()->nullable();
-            $table->string('prodi')->nullable(); // D3/D4 Telkom
             $table->enum('role', ['mahasiswa', 'dosen', 'staff'])->default('mahasiswa');
-            $table->string('kelas')->nullable(); // Contoh: IK-3A
             $table->string('password')->nullable(); // Nullable untuk persiapan SSO
             $table->rememberToken();
             $table->timestamps();
