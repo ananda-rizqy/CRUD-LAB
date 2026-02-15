@@ -9,20 +9,23 @@ use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
 {
-    public function login(Request $request)
+    /**
+     * Handle Login & Register otomatis via SSO Google.
+     * Fungsi ini dipanggil setelah Frontend mendapatkan data dari Google.
+     */
+    public function ssoLogin(Request $request)
     {
+        // Data yang dikirim dari Frontend setelah User klik "Login Google"
         $request->validate([
-            'name' => 'required|string',
+            'name'  => 'required|string',
             'email' => 'required|email',
-            'password' => 'required',
         ]);
 
         $email = strtolower($request->email);
-        $prefix = explode('@', $email)[0]; // Bagian depan email
-        $domain = explode('@', $email)[1]; // Bagian domain email
+        $prefix = explode('@', $email)[0];
+        $domain = explode('@', $email)[1];
 
-        // --- PERBAIKAN: Definisi $nimOnly ---
-        // Menghapus semua karakter kecuali angka (abu.1234567 -> 1234567)
+        // Ekstrak angka NIM saja (misal: abu.12345678 -> 12345678)
         $nimOnly = preg_replace('/[^0-9]/', '', $prefix);
 
         // --- LOGIKA FILTER ROLE & DOMAIN ---
@@ -32,12 +35,13 @@ class AuthController extends Controller
             $role = 'dosen';
         } elseif ($domain === 'staff.polines.ac.id') {
             $role = 'staff';
-        } elseif (preg_match('/(431|333|433)/', $nimOnly)) {
-            // Ditambahkan 433 jika prodi Anda termasuk dalam filter
+        } 
+        // Filter Mahasiswa: Diawali 431/333 dan Total 8 Digit
+        elseif (preg_match('/^(431|333)\d{5}$/', $nimOnly)) {
             $role = 'mahasiswa';
         }
 
-        // Jika tidak memenuhi kriteria di atas, tolak akses
+        // Jika tidak lolos filter institusi
         if (!$role) {
             return response()->json([
                 'status' => 'error',
@@ -45,37 +49,39 @@ class AuthController extends Controller
             ], 403);
         }
 
-        // --- PROSES AUTHENTIKASI ---
+        // --- PROSES DATABASE (AUTOMATIC REGISTER/LOGIN) ---
+        // Cari user berdasarkan email, jika tidak ada, buat baru
         $user = User::where('email', $email)->first();
 
-        // Auto-Register jika user belum ada
         if (!$user) {
+            // Cek duplikasi NIM (jika mahasiswa ganti email tapi NIM sama)
+            if ($role === 'mahasiswa' && User::where('nim_nip', $nimOnly)->exists()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'NIM ini sudah terdaftar dengan email lain.'
+                ], 409);
+            }
+
+            // Pendaftaran otomatis (tanpa password karena full SSO)
             $user = User::create([
-                'name' => $request->name,
-                'email' => $email,
-                'nim_nip' => $nimOnly, // Sekarang variabel ini sudah didefinisikan di atas
-                'role' => $role,
-                'password' => Hash::make($request->password),
+                'name'    => $request->name,
+                'email'   => $email,
+                'nim_nip' => $nimOnly,
+                'role'    => $role,
+                'password' => null, // Dikosongkan karena login via Google
             ]);
         }
 
-        // Verifikasi Password
-        if (!Hash::check($request->password, $user->password)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Password salah.'
-            ], 401);
-        }
-
-        // Generate Token (Single Session)
+        // --- GENERATE TOKEN (LOGIN) ---
+        // Hapus token lama agar hanya bisa login di satu perangkat (opsional)
         $user->tokens()->delete();
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
-            'status' => 'sukses',
-            'message' => "Login Berhasil sebagai " . ucfirst($role),
-            'user' => $user,
-            'token' => $token
+            'status'  => 'sukses',
+            'message' => "Berhasil masuk sebagai " . ucfirst($role),
+            'user'    => $user,
+            'token'   => $token
         ]);
     }
 }

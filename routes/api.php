@@ -8,7 +8,7 @@
     use Illuminate\Support\Facades\Route;
 
     // Rute Login
-    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/login', [AuthController::class, 'ssoLogin']);
 
     //fitur CRUD alat
     Route::apiResource('alat', AlatController::class);
