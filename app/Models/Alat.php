@@ -12,10 +12,9 @@ class Alat extends Model
 
     protected $fillable = [
         'nama_alat',
-        'ruang_lab',
-        'total',
-        'tersedia',
-        'kondisi'
+        'letak',
+        'kode',
+        'kondisi',
     ];
     
     // Override accessor - ambil langsung dari database tanpa konversi

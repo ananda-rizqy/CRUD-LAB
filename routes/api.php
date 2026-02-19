@@ -1,31 +1,31 @@
-    <?php
+<?php
 
-    use App\Http\Controllers\Api\AuthController;
-    use App\Http\Controllers\Api\AlatController;
-    // use App\Http\Controllers\Api\PeminjamanController;
-    // use App\Http\Controllers\Api\RuangController;
-    use App\Http\Controllers\Api\DeviceController;
-    use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\AlatController;
+use App\Http\Controllers\Api\DeviceController;
+use Illuminate\Support\Facades\Route;
 
-    // Rute Login
-    Route::post('/login', [AuthController::class, 'ssoLogin']);
+// --- RUTE PUBLIK (Bisa diakses tanpa login) ---
+Route::post('/login', [AuthController::class, 'ssoLogin']);
 
-    //fitur CRUD alat
-    Route::apiResource('alat', AlatController::class);
 
-    // Device
+// --- RUTE TERPROTEKSI (Harus Login via SSO/Sanctum) ---
+Route::middleware('auth:sanctum')->group(function () {
+
+    // Semua role (Mahasiswa, Dosen) bisa melihat data ketersediaan alat
+    Route::get('/alat', [AlatController::class, 'index']);
+    Route::get('/alat/{id}', [AlatController::class, 'show']);
+
+    // Khusus Staff: Bisa melakukan Tambah, Edit, dan Hapus
+    Route::middleware('role:staff')->group(function () {
+        Route::post('/alat', [AlatController::class, 'store']);
+        Route::put('/alat/{id}', [AlatController::class, 'update']);
+        Route::delete('/alat/{id}', [AlatController::class, 'destroy']);
+    });
+
+    // 2. FITUR DEVICE
     Route::apiResource("device", DeviceController::class);
 
-    // //fitur peminjaman dan pengembalian alat
-    // route::post('peminjaman', [PeminjamanController::class, 'store']);
-    // route::get('peminjaman', [PeminjamanController::class, 'index']);
-    // route::put('peminjaman/{id}/setujui', [PeminjamanController::class, 'setujui']);
-    // Route::post('peminjaman/{id}/upload-foto', [PeminjamanController::class, 'uploadFotoBefore']);
-    // Route::post('peminjaman/{id}/kembalikan', [PeminjamanController::class, 'kembalikan']);
-
-    // //fitur penggunaan lab
-    // Route::post('ruang/masuk', [RuangController::class, 'masuk']);
-    // Route::post('ruang/keluar/{id}', [RuangController::class, 'keluar']);
-    // Route::get('ruang', [RuangController::class, 'index']);
-
-    
+    // 3. FITUR  (Peminjaman & Ruang)
+    // Route::get('peminjaman', [PeminjamanController::class, 'index']);
+});

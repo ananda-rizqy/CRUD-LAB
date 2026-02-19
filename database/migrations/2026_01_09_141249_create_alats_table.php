@@ -13,11 +13,10 @@ return new class extends Migration
     {
         Schema::create('alats', function (Blueprint $table) {
             $table->id();
-            $table->string('nama_alat');      // Tambahkan ini [cite: 31, 151]
-            $table->string('ruang_lab'); // Tambahkan ini [cite: 31, 151]
-            $table->integer('total');          // Tambahkan ini [cite: 31, 151]
-            $table->integer('tersedia');       // Tambahkan ini [cite: 31, 151]
-            $table->string('kondisi');         // Tambahkan ini [cite: 31, 151]
+            $table->string('nama_alat');      
+            $table->string('letak'); 
+            $table->string('kode')->unique()->nullable();
+            $table->enum('kondisi', ['Baik', 'Rusak'])->default('Baik');         
             $table->timestamps();
         });
     }

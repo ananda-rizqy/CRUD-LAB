@@ -5,27 +5,31 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
 {
     /**
-     * Handle Login & Register otomatis via SSO Google.
-     * Fungsi ini dipanggil setelah Frontend mendapatkan data dari Google.
+     * Handle Login Simulasi via Email (Tanpa Password/Nama).
      */
     public function ssoLogin(Request $request)
     {
-        // Data yang dikirim dari Frontend setelah User klik "Login Google"
+        // 1. Validasi HANYA email (Hapus 'name' => 'required')
         $request->validate([
-            'name'  => 'required|string',
             'email' => 'required|email',
         ]);
 
         $email = strtolower($request->email);
-        $prefix = explode('@', $email)[0];
-        $domain = explode('@', $email)[1];
+        
+        // Cek apakah email mengandung karakter '@'
+        if (!str_contains($email, '@')) {
+            return response()->json(['status' => 'error', 'message' => 'Format email salah.'], 400);
+        }
 
-        // Ekstrak angka NIM saja (misal: abu.12345678 -> 12345678)
+        $parts = explode('@', $email);
+        $prefix = $parts[0];
+        $domain = $parts[1];
+
+        // Ekstrak angka saja (NIM/NIP)
         $nimOnly = preg_replace('/[^0-9]/', '', $prefix);
 
         // --- LOGIKA FILTER ROLE & DOMAIN ---
@@ -36,8 +40,8 @@ class AuthController extends Controller
         } elseif ($domain === 'staff.polines.ac.id') {
             $role = 'staff';
         } 
-        // Filter Mahasiswa: Diawali 431/333 dan Total 8 Digit
-        elseif (preg_match('/^(431|333)\d{5}$/', $nimOnly)) {
+        // Filter Mahasiswa: Misal NIM diawali 431/333
+        elseif (str_starts_with($nimOnly, '431') || str_starts_with($nimOnly, '333')) {
             $role = 'mahasiswa';
         }
 
@@ -45,35 +49,26 @@ class AuthController extends Controller
         if (!$role) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Akses ditolak. Hanya mahasiswa telekomunikasi.'
+                'message' => 'Akses ditolak. Gunakan email institusi Polines yang valid.'
             ], 403);
         }
 
-        // --- PROSES DATABASE (AUTOMATIC REGISTER/LOGIN) ---
-        // Cari user berdasarkan email, jika tidak ada, buat baru
+        // --- PROSES DATABASE ---
         $user = User::where('email', $email)->first();
 
         if (!$user) {
-            // Cek duplikasi NIM (jika mahasiswa ganti email tapi NIM sama)
-            if ($role === 'mahasiswa' && User::where('nim_nip', $nimOnly)->exists()) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'NIM ini sudah terdaftar dengan email lain.'
-                ], 409);
-            }
-
-            // Pendaftaran otomatis (tanpa password karena full SSO)
+            // Jika user baru, buat data otomatis
             $user = User::create([
-                'name'    => $request->name,
+                // Karena simulasi tanpa input nama, kita ambil nama dari prefix email
+                'name'    => ucwords(str_replace('.', ' ', $prefix)), 
                 'email'   => $email,
                 'nim_nip' => $nimOnly,
                 'role'    => $role,
-                'password' => null, // Dikosongkan karena login via Google
+                'password' => null, 
             ]);
         }
 
-        // --- GENERATE TOKEN (LOGIN) ---
-        // Hapus token lama agar hanya bisa login di satu perangkat (opsional)
+        // --- GENERATE TOKEN ---
         $user->tokens()->delete();
         $token = $user->createToken('auth_token')->plainTextToken;
 

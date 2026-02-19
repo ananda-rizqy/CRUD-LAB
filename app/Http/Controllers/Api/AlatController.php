@@ -5,41 +5,65 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Alat;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class AlatController extends Controller
 {
     public function index(Request $request) 
     {
-        $query = Alat::query();
+        $role = $request->query('role');
+        $search = $request->query('search');
 
-        if ($request->has('search')) {
-            $search = $request->search;
-            $query->where('nama_alat', 'like', "%{$search}%")
-                  ->orWhere('ruang_lab', 'like', "%{$search}%");
+        if ($role === 'staff') {
+            $query = Alat::query();
+
+            if ($search) {
+                $query->where(function($q) use ($search) {
+                    $q->where('nama_alat', 'like', "%{$search}%")
+                      ->orWhere('letak', 'like', "%{$search}%")
+                      ->orWhere('kode', 'like', "%{$search}%");
+                });
+            }
+
+            return response()->json($query->get(), 200);
+        } 
+
+        // Menghitung total dan tersedia (kondisi Baik) secara Real-time
+        $queryAgregasi = Alat::select(
+                'nama_alat', 
+                'letak',
+                DB::raw('COUNT(*) as total'),
+                DB::raw("SUM(CASE WHEN kondisi = 'Baik' THEN 1 ELSE 0 END) as tersedia")
+            )
+            ->groupBy('nama_alat', 'letak');
+
+        if ($search) {
+            $queryAgregasi->where(function($q) use ($search) { 
+                $q->where('nama_alat', 'like', "%{$search}%")
+                  ->orWhere('letak', 'like', "%{$search}%");
+            });
         }
-
-        return response()->json($query->get(), 200);
+        
+        return response()->json($queryAgregasi->get(), 200);
     }
 
     public function store(Request $request) 
     {
         $validated = $request->validate([
             'nama_alat' => 'required',
-            'ruang_lab' => 'required',
-            'total'     => 'required|integer|min:0',
-            'tersedia'  => 'required|integer|min:0|lte:total', // Aturan perbandingan
-            'kondisi'   => 'required|string',
+            'letak'     => 'required',
+            'kode'      => 'nullable|string|unique:alats,kode',
+            'kondisi'   => 'required|in:Baik,Rusak',
         ], [
-            // Pesan kustom Bahasa Indonesia diletakkan di array kedua
-            'tersedia.lte' => 'Jumlah alat tersedia tidak boleh melebihi total stok alat (:value).'
+            'kode.unique' => 'Kode alat ini sudah digunakan oleh unit lain!'
         ]);
 
         $alat = Alat::create($validated);
         
         return response()->json([
             'sukses' => true,
-            'pesan' => 'Alat berhasil ditambah',
-            'data'    => $alat
+            'pesan'  => 'Unit alat berhasil didaftarkan ke sistem',
+            'data'   => $alat
         ], 201);
     }
 
@@ -55,22 +79,17 @@ class AlatController extends Controller
 
         $validated = $request->validate([
             'nama_alat' => 'sometimes|required',
-            'ruang_lab' => 'sometimes|required',
-            'total'     => 'sometimes|required|integer|min:0',
-            // Tambahkan lte:total di sini agar saat edit tetap tervalidasi
-            'tersedia'  => 'sometimes|required|integer|min:0|lte:total',
-            'kondisi'   => 'sometimes|required',
-        ], [
-            'tersedia.lte' => 'Jumlah alat tersedia tidak boleh melebihi total stok alat (:value).'
+            'letak'     => 'sometimes|required',
+            'kode'      => 'sometimes|required|string|unique:alats,kode,' . $id,
+            'kondisi'   => 'sometimes|required|in:Baik,Rusak',
         ]);
 
-        // Proses update data ke database
         $alat->update($validated);
 
         return response()->json([
             'sukses' => true,
-            'pesan' => 'Data inventori berhasil diperbarui',
-            'data'    => $alat
+            'pesan'  => 'Status unit alat berhasil diperbarui',
+            'data'   => $alat
         ], 200);
     }
 
@@ -81,8 +100,7 @@ class AlatController extends Controller
 
         return response()->json([
             'sukses' => true,
-            'pesan' => 'Alat berhasil dihapus dari inventori'
+            'pesan' => 'Unit alat berhasil dihapus dari sistem'
         ], 200);
     }
 }
-   
