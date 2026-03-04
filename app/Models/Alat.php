@@ -29,4 +29,4 @@ class Alat extends Model
         // Return raw value dari database (sudah WIB)
         return $value ? date('Y-m-d H:i:s', strtotime($value)) : null;
     }
-}
+} 
