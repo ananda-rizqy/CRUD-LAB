@@ -5,9 +5,8 @@ use App\Http\Controllers\Api\AlatController;
 use App\Http\Controllers\Api\DeviceController;
 use Illuminate\Support\Facades\Route;
 
-// --- RUTE PUBLIK (Bisa diakses tanpa login) ---
-Route::post('/login', [AuthController::class, 'ssoLogin']);
-
+// / Menggunakan endpoint /auth/google agar lebih jelas bahwa ini login via SSO
+Route::post('/auth/google', [AuthController::class, 'loginGoogle']);
 
 // --- RUTE TERPROTEKSI (Harus Login via SSO/Sanctum) ---
 Route::middleware('auth:sanctum')->group(function () {

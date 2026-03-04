@@ -5,71 +5,59 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Google\Client;
 
 class AuthController extends Controller
 {
-    /**
-     * Handle Login Simulasi via Email (Tanpa Password/Nama).
-     */
-    public function ssoLogin(Request $request)
+    public function loginGoogle(Request $request)
     {
-        // 1. Validasi HANYA email (Hapus 'name' => 'required')
         $request->validate([
-            'email' => 'required|email',
+            'token' => 'required',
         ]);
 
-        $email = strtolower($request->email);
+        $client = new Client(['client_id' => env('GOOGLE_CLIENT_ID')]);
         
-        // Cek apakah email mengandung karakter '@'
-        if (!str_contains($email, '@')) {
-            return response()->json(['status' => 'error', 'message' => 'Format email salah.'], 400);
+        $payload = $client->verifyIdToken($request->token);
+
+        if (!$payload) {
+            return response()->json([
+                'status' => 'error', 
+                'message' => 'Token Google tidak valid atau kedaluwarsa.'
+            ], 401);
         }
 
+        $email = strtolower($payload['email']);
+        $fullName = $payload['name']; 
         $parts = explode('@', $email);
         $prefix = $parts[0];
         $domain = $parts[1];
 
-        // Ekstrak angka saja (NIM/NIP)
         $nimOnly = preg_replace('/[^0-9]/', '', $prefix);
 
-        // --- LOGIKA FILTER ROLE & DOMAIN ---
         $role = null;
 
         if ($domain === 'dosen.polines.ac.id') {
             $role = 'dosen';
-        } elseif ($domain === 'staff.polines.ac.id') {
+        } elseif ($domain === 'gmail.com') {
             $role = 'staff';
         } 
-        // Filter Mahasiswa: Misal NIM diawali 431/333
+
+        // Filter Mahasiswa (Contoh NIM Polines)
         elseif (str_starts_with($nimOnly, '431') || str_starts_with($nimOnly, '333')) {
             $role = 'mahasiswa';
         }
 
-        // Jika tidak lolos filter institusi
-        if (!$role) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Akses ditolak. Gunakan email institusi Polines yang valid.'
-            ], 403);
-        }
-
-        // --- PROSES DATABASE ---
-        $user = User::where('email', $email)->first();
-
-        if (!$user) {
-            // Jika user baru, buat data otomatis
-            $user = User::create([
-                // Karena simulasi tanpa input nama, kita ambil nama dari prefix email
-                'name'    => ucwords(str_replace('.', ' ', $prefix)), 
-                'email'   => $email,
+        $user = User::updateOrCreate(
+            ['email' => $email],
+            [
+                'name'    => $fullName, 
                 'nim_nip' => $nimOnly,
                 'role'    => $role,
                 'password' => null, 
-            ]);
-        }
+            ]
+        );
 
-        // --- GENERATE TOKEN ---
-        $user->tokens()->delete();
+        $user->tokens()->delete(); 
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([

@@ -103,4 +103,4 @@ class AlatController extends Controller
             'pesan' => 'Unit alat berhasil dihapus dari sistem'
         ], 200);
     }
-}
+} 
