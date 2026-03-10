@@ -35,7 +35,7 @@ public function riwayatDosen()
                     'foto_after' => $item->foto_after ? asset('storage/' . $item->foto_after) : null,
                 ];
             });
-
+ 
         return response()->json([
             'status' => 'sukses',
             'data' => $riwayat
