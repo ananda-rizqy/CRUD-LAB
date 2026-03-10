@@ -10,7 +10,7 @@ use App\Models\PenggunaanRuang;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
-
+ 
 class RiwayatpinjamController extends Controller
 {
 
