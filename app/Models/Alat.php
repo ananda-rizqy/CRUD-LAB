@@ -54,4 +54,4 @@ class Alat extends Model
     {
         return $value ? date('Y-m-d H:i:s', strtotime($value)) : null;
     }
-}
+} 
