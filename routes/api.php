@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AlatController;
 use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\PeminjamanController;
+use App\Http\Controllers\Api\RiwayatpinjamController;
+use App\Http\Controllers\Api\RiwayatruangController;
 use App\Http\Controllers\Api\RuangController;
 use App\Models\PenggunaanRuang;
 use Illuminate\Support\Facades\Route;
@@ -30,6 +32,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/peminjaman/monitor-riwayat', [PeminjamanController::class, 'index']);
         Route::get('/peminjaman/laporan-rusak', [PeminjamanController::class, 'laporanRusak']);
         Route::get('/staff/riwayat-ruang', [RuangController::class, 'riwayatStaff']);
+    });
+
+    // Khusus role dosen:riwayat peminjaman dan penggunaan ruang
+    Route::middleware('role:dosen')->group(function () {
+        Route::get('/peminjaman/pantau-riwayat', [RiwayatpinjamController::class, 'riwayatDosen']);
+        Route::get('/dosen/pantau-ruang', [RiwayatruangController::class, 'riwayatDosen']);
     });
 
     // Khusus role mahasiswa
