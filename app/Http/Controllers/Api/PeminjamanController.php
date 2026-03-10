@@ -281,4 +281,4 @@ public function riwayatMahasiswa()
         ], 500);
         }
     }
-}
+} 
