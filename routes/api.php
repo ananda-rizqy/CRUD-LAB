@@ -55,7 +55,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/ruang/keluar/{id}', [RuangController::class, 'laporKeluar']); //lapor keluar ruang
     });
 
-      
     });
 
     
