@@ -9,11 +9,10 @@ return new class extends Migration
     /**
      * Run the migrations.
      */
-    public function up()
+    public function up(): void
     {
         Schema::table('peminjaman', function (Blueprint $table) {
-            $table->timestamp('tanggal_dikembalikan')->nullable();
-            $table->string('foto_after')->nullable();
+            //
         });
     }
 

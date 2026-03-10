@@ -6,101 +6,140 @@ use App\Http\Controllers\Controller;
 use App\Models\Alat;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class AlatController extends Controller
 {
+    private function generateQrUrl($kode)
+    {
+        if (!$kode) return null;
+        $params = [
+            'text'    => $kode,
+            'margin'  => 4,      
+            'size'    => 300,    
+            'ecLevel' => 'M',    
+            'format'  => 'png'
+        ];
+        return "https://quickchart.io/qr?" . http_build_query($params);
+    }
+
     public function index(Request $request) 
     {
         $role = $request->query('role');
         $search = $request->query('search');
 
         if ($role === 'staff') {
-            $query = Alat::query();
-
-            if ($search) {
-                $query->where(function($q) use ($search) {
-                    $q->where('nama_alat', 'like', "%{$search}%")
-                      ->orWhere('letak', 'like', "%{$search}%")
+            $data = Alat::when($search, function($query) use ($search) {
+                $query->where('nama_alat', 'like', "%{$search}%")
                       ->orWhere('kode', 'like', "%{$search}%");
-                });
-            }
+            })->get()->map(function($item) {
+                $item->qr_url = $this->generateQrUrl($item->kode);
+                return $item;
+            });
+            return response()->json($data, 200);
+        }
 
-            return response()->json($query->get(), 200);
-        } 
-
-        // Menghitung total dan tersedia (kondisi Baik) secara Real-time
         $queryAgregasi = Alat::select(
                 'nama_alat', 
                 'letak',
-                DB::raw('COUNT(*) as total'),
-                DB::raw("SUM(CASE WHEN kondisi = 'Baik' THEN 1 ELSE 0 END) as tersedia")
+                DB::raw('SUM(total) as total'), 
+                DB::raw("SUM(tersedia) as tersedia")
             )
-            ->groupBy('nama_alat', 'letak');
+            ->groupBy('nama_alat', 'letak')
+            ->when($search, function($query) use ($search) {
+                $query->where('nama_alat', 'like', "%{$search}%");
+            })
+            ->get();
+        
+        return response()->json($queryAgregasi, 200);
+    }
 
-        if ($search) {
-            $queryAgregasi->where(function($q) use ($search) { 
-                $q->where('nama_alat', 'like', "%{$search}%")
-                  ->orWhere('letak', 'like', "%{$search}%");
-            });
+    public function store(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'nama_alat'    => 'required|string|max:255',
+                'letak'        => 'required|string|max:255',
+                'kode'         => 'nullable|string|unique:alats,kode',
+                'kondisi'      => 'required|in:baik,rusak,Baik,Rusak',
+            ]);
+
+            $kondisi = ucfirst(strtolower($validated['kondisi'])); 
+            
+            $alat = Alat::create([
+                'nama_alat' => $validated['nama_alat'],
+                'letak'     => $validated['letak'],
+                'kode'      => $validated['kode'] ?? null, 
+                'kondisi'   => $kondisi,
+                'total'     => 1,      
+                'tersedia'  => ($kondisi === 'Baik') ? 1 : 0,       
+                'qrcode_token' => Str::random(32),
+            ]);
+
+            return response()->json(['message' => 'Alat berhasil ditambahkan', 'data' => $alat], 201);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Gagal tambah data', 'error' => $e->getMessage()], 500);
         }
-        
-        return response()->json($queryAgregasi->get(), 200);
     }
 
-    public function store(Request $request) 
+    public function update(Request $request, $id)
     {
-        $validated = $request->validate([
-            'nama_alat' => 'required',
-            'letak'     => 'required',
-            'kode'      => 'nullable|string|unique:alats,kode',
-            'kondisi'   => 'required|in:Baik,Rusak',
-        ], [
-            'kode.unique' => 'Kode alat ini sudah digunakan oleh unit lain!'
+        $request->validate([
+            'kondisi' => 'required|in:Baik,Rusak,baik,rusak',
+            'nama_alat' => 'nullable|string',
+            'total' => 'nullable|integer|min:0',
         ]);
 
-        $alat = Alat::create($validated);
-        
-        return response()->json([
-            'sukses' => true,
-            'pesan'  => 'Unit alat berhasil didaftarkan ke sistem',
-            'data'   => $alat
-        ], 201);
+        try {
+            return DB::transaction(function () use ($request, $id) {
+                $alat = Alat::lockForUpdate()->findOrFail($id);
+
+                $kondisiBaru = ucfirst(strtolower($request->kondisi));
+                $totalBaru = $request->has('total') ? (int)$request->total : (int)$alat->total;
+
+                $alat->nama_alat = $request->nama_alat ?? $alat->nama_alat;
+                $alat->total = $totalBaru;
+                $alat->kondisi = $kondisiBaru;
+
+                if ($kondisiBaru === 'Baik') {
+                    $alat->tersedia = $totalBaru;
+                } else {
+                    $alat->tersedia = 0;
+                }
+
+                $alat->save();
+                $alat->refresh(); 
+
+                return response()->json([
+                    'message' => 'Alat berhasil diperbarui', 
+                    'data' => $alat
+                ]);
+            });
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Gagal update data', 'error' => $e->getMessage()], 500);
+        }
     }
 
-    public function show($id) 
+    public function destroy($id)
     {
-        $alat = Alat::findOrFail($id);
-        return response()->json($alat, 200);
+        try {
+            $alat = Alat::findOrFail($id);
+            if ($alat->peminjaman()->exists()) {
+                $alat->peminjaman()->delete();
+            }
+            $alat->delete();
+            return response()->json(['message' => 'Alat berhasil dihapus']);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Gagal menghapus data', 'error' => $e->getMessage()], 500);
+        }
     }
 
-    public function update(Request $request, $id) 
+    public function scanAlat($kode)
     {
-        $alat = Alat::findOrFail($id);
-
-        $validated = $request->validate([
-            'nama_alat' => 'sometimes|required',
-            'letak'     => 'sometimes|required',
-            'kode'      => 'sometimes|required|string|unique:alats,kode,' . $id,
-            'kondisi'   => 'sometimes|required|in:Baik,Rusak',
-        ]);
-
-        $alat->update($validated);
-
-        return response()->json([
-            'sukses' => true,
-            'pesan'  => 'Status unit alat berhasil diperbarui',
-            'data'   => $alat
-        ], 200);
+        $alat = Alat::where('kode', trim($kode))->first();
+        if (!$alat) {
+            return response()->json(['sukses' => false, 'pesan' => "Unit tidak ditemukan."], 404);
+        }
+        return response()->json(['sukses' => true, 'data' => $alat], 200);
     }
-
-    public function destroy($id) 
-    {
-        $alat = Alat::findOrFail($id);
-        $alat->delete();
-
-        return response()->json([
-            'sukses' => true,
-            'pesan' => 'Unit alat berhasil dihapus dari sistem'
-        ], 200);
-    }
-} 
+}

@@ -12,35 +12,34 @@ class Peminjaman extends Model
     protected $table = 'peminjaman'; 
 
     protected $fillable = [
+        'user_id',            
         'alat_id',
-        'nama_mahasiswa',
-        'nim',
-        'laboratorium',
         'tujuan_penggunaan',
-        'waktu_pinjam',
-        'waktu_kembali',
-        'kondisi_pinjam',
-        'status',
+        'waktu_pinjam',       
+        'waktu_kembali',      
+        'tanggal_diambil',    
+        'tanggal_kembali',    
+        'status',             // pending, approved, returned, rejected
         'foto_before',
-        'tanggal_dikembalikan',
         'foto_after',
-        'kondisi_kembali',
+        'kondisi_kembali',    // baik, rusak
         'deskripsi_kerusakan',
     ];
+
+    protected $casts = [
+        'waktu_pinjam' => 'datetime',
+        'waktu_kembali' => 'datetime',
+        'tanggal_diambil' => 'datetime',
+        'tanggal_kembali' => 'datetime',
+    ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
 
     public function alat()
     {
         return $this->belongsTo(Alat::class, 'alat_id');
-    }
-
-    // Accessor untuk timezone WIB
-    public function getCreatedAtAttribute($value)
-    {
-        return $value ? date('Y-m-d H:i:s', strtotime($value)) : null;
-    }
-
-    public function getUpdatedAtAttribute($value)
-    {
-        return $value ? date('Y-m-d H:i:s', strtotime($value)) : null;
     }
 }

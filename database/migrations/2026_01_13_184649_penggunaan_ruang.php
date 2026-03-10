@@ -6,35 +6,32 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('penggunaan_ruang', function (Blueprint $table) {
+            //kondisi awal ruang
             $table->id();
-            $table->string('nama_mahasiswa');
-            $table->string('nim');
+            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
             $table->string('laboratorium');
-            $table->string('keperluan');
-            $table->string('foto_before')->nullable(); 
-            $table->string('foto_after')->nullable();
-            
-            // PERBAIKAN: Hapus ->after('foto_after')
-            $table->string('kondisi_lab')->nullable(); 
-            
+            $table->string('kondisi_masuk');
+            $table->string('foto_before'); 
             $table->timestamp('waktu_masuk')->useCurrent();
+            $table->string('keperluan');
+           
+            //kondisi akhir ruang
+            $table->string('kondisi_keluar')->nullable();
+            $table->string('foto_after')->nullable(); 
             $table->timestamp('waktu_keluar')->nullable();
-            $table->enum('status', ['aktif', 'selesai'])->default('aktif');
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
+
+        Schema::table('penggunaan_ruang', function (Blueprint $table) {
+        $table->dropForeign(['user_id']); 
+        });
         Schema::dropIfExists('penggunaan_ruang');
     }
 };

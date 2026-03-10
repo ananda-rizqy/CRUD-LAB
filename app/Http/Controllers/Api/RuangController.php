@@ -5,84 +5,134 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\PenggunaanRuang;
+use Illuminate\Support\Facades\Storage;
 
 class RuangController extends Controller
 {
+    public function laporMasuk(Request $request)
+    {
+        $request->validate([
+            'laboratorium'  => 'required|string',
+            'kondisi_masuk' => 'required|string',
+            'keperluan'     => 'required|string',
+            'jam_mulai'     => 'required|date',
+            'jam_selesai'   => 'required|date|after:jam_mulai',
+            ], [
+            'jam_selesai.after' => 'Jam selesai harus lebih lama dari jam mulai pemakaian.',
+            'foto_before'   => 'required|image|mimes:jpeg,png,jpg|max:2048',
+            ]);
 
-public function index() {
-    // Mengambil semua data penggunaan ruang, diurutkan dari yang terbaru
-    $riwayat = PenggunaanRuang::orderBy('created_at', 'desc')->get();
-    
-    return response()->json([
-        'message' => 'Berhasil mengambil riwayat penggunaan ruang',
-        'data' => $riwayat
-    ]);
-}
-    // Tahap 1: Check-in (Masuk)
-public function masuk(Request $request) {
-    $request->validate([
-        'nama_mahasiswa' => 'required',
-        'nim'            => 'required',
-        'laboratorium'   => 'required',
-        'foto_before'    => 'required|image|mimes:jpeg,png,jpg|max:2048'
-    ], [
-        'foto_before.required' => 'Wajib mengunggah foto kondisi awal laboratorium!'
-    ]);
+        $path = $request->file('foto_before')->store('ruang/before', 'public');
+        $penggunaan = PenggunaanRuang::create([
+            'user_id'       => $request->user()->id,
+            'laboratorium'  => $request->laboratorium,
+            'kondisi_masuk' => $request->kondisi_masuk,
+            'keperluan'     => $request->keperluan,
+            'jam_mulai'     => $request->jam_mulai,
+            'jam_selesai'   => $request->jam_selesai,
+            'foto_before'   => $path,
+        ]);
 
-    $data = $request->all();
-
-    if ($request->hasFile('foto_before')) {
-        $file = $request->file('foto_before');
-        $nama_file = time() . '_ruang_before_' . $file->getClientOriginalName();
-        $file->move(public_path('uploads/ruangan'), $nama_file);
-        $data['foto_before'] = $nama_file;
+        return response()->json([
+            'message' => 'Laporan masuk berhasil disimpan!',
+            'data'    => $penggunaan
+        ], 201);
     }
 
-    $log = PenggunaanRuang::create($data);
-    return response()->json(['message' => 'Berhasil Check-in', 'data' => $log]);
-}
+    public function laporKeluar(Request $request, $id)
+    {
+        $request->validate([
+            'kondisi_keluar' => 'required|string',
+            'foto_after'     => 'required|image|mimes:jpeg,png,jpg|max:2048',
+        ]);
 
-// Tahap 2: Check-out (Keluar)
-public function keluar(Request $request, $id) {
-    // 1. Cari data berdasarkan ID
-    $log = PenggunaanRuang::find($id);
+        $penggunaan = PenggunaanRuang::findOrFail($id);
 
-    // 2. CEK: Jika data TIDAK ditemukan (Null)
-    // Ini akan menangkap pengujian negatif Anda (ID yang belum check-in)
-    if (!$log) {
+        $path = $request->file('foto_after')->store('ruang/after', 'public');
+
+        $penggunaan->update([
+            'kondisi_keluar' => $request->kondisi_keluar,
+            'foto_after'     => $path,
+            'waktu_keluar'   => now(), // Mengisi timestamp waktu keluar saat ini
+        ]);
+
+        return response()->json([
+            'message' => 'Laporan keluar berhasil disimpan, terima kasih!',
+            'data'    => $penggunaan
+        ]);
+    }
+public function riwayatRuang()
+{
+    try {
+        $userId = \Illuminate\Support\Facades\Auth::id();
+
+        $riwayat = PenggunaanRuang::where('user_id', $userId)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'id' => $item->id,
+                    'laboratorium' => $item->laboratorium,
+                    'keperluan' => $item->keperluan,
+                    'kondisi_masuk' => $item->kondisi_masuk,
+                    'kondisi_keluar' => $item->kondisi_keluar ?? 'Belum Check-out',
+                    'jam_mulai' => $item->jam_mulai ? \Carbon\Carbon::parse($item->jam_mulai)->format('d M, H:i') : '-',
+                    'jam_selesai' => $item->jam_selesai ? \Carbon\Carbon::parse($item->jam_selesai)->format('d M, H:i') : '-',
+                    'waktu_masuk' => $item->created_at->timezone('Asia/Jakarta')->format('d M Y, H:i'),
+                    'waktu_keluar' => $item->updated_at && $item->kondisi_keluar 
+                        ? $item->updated_at->timezone('Asia/Jakarta')->format('d M Y, H:i') 
+                        : '-',
+                    'foto_before' => $item->foto_before ? asset('storage/' . $item->foto_before) : null,
+                    'foto_after' => $item->foto_after ? asset('storage/' . $item->foto_after) : null,
+                ];
+            });
+
+        return response()->json([
+            'status' => 'sukses',
+            'data' => $riwayat
+        ], 200);
+
+    } catch (\Exception $e) {
         return response()->json([
             'status' => 'error',
-            'message' => 'Data tidak ditemukan! Anda harus Check-in terlebih dahulu sebelum bisa melakukan Check-out.'
-        ], 404);
+            'message' => 'Gagal mengambil riwayat ruang: ' . $e->getMessage()
+        ], 500);
     }
+}
+public function riwayatStaff()
+{
+    try {
+        // Ambil semua data penggunaan ruang beserta data mahasiswanya
+        $riwayat = \App\Models\PenggunaanRuang::with('user')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'id' => $item->id,
+                    'nama_mahasiswa' => $item->user->name ?? 'N/A',
+                    'nim_mahasiswa' => $item->user->nim_nip ?? '-',
+                    'laboratorium' => $item->laboratorium,
+                    'keperluan' => $item->keperluan,
+                    'kondisi_masuk' => $item->kondisi_masuk,
+                    'kondisi_keluar' => $item->kondisi_keluar ?? 'SEDANG DIGUNAKAN',
+                    'jam_mulai' => $item->jam_mulai ? \Carbon\Carbon::parse($item->jam_mulai)->format('H:i') : '-',
+                    'jam_selesai' => $item->jam_selesai ? \Carbon\Carbon::parse($item->jam_selesai)->format('H:i') : '-',
+                    'waktu_masuk' => $item->created_at->timezone('Asia/Jakarta')->format('d M Y, H:i'),
+                    'waktu_keluar' => ($item->kondisi_keluar && $item->kondisi_keluar !== 'Belum Check-out') 
+                        ? $item->updated_at->timezone('Asia/Jakarta')->format('d M Y, H:i') 
+                        : '-',
+                    'foto_before' => $item->foto_before ? asset('storage/' . $item->foto_before) : null,
+                    'foto_after' => $item->foto_after ? asset('storage/' . $item->foto_after) : null,
+                ];
+            });
 
-    // 3. Validasi input (Hanya dijalankan jika data $log ditemukan)
-    $request->validate([
-        'foto_after' => 'required|image|mimes:jpeg,png,jpg|max:2048',
-        'kondisi_lab' => 'required|string'
-    ], [
-        'foto_after.required' => 'Wajib mengunggah foto kondisi akhir laboratorium sebelum check-out!',
-        'kondisi_lab.required' => 'Mohon isi keterangan kondisi lab (contoh: Bersih)!'
-    ]);
+        return response()->json([
+            'status' => 'sukses',
+            'data' => $riwayat
+        ], 200);
 
-    // 4. Proses upload file
-    if ($request->hasFile('foto_after')) {
-        $file = $request->file('foto_after');
-        $nama_file = time() . '_ruang_after_' . $file->getClientOriginalName();
-        $file->move(public_path('uploads/ruangan'), $nama_file);
-        $log->foto_after = $nama_file;
+    } catch (\Exception $e) {
+        return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
     }
-
-    // 5. Update sisa data dan simpan
-    $log->kondisi_lab = $request->kondisi_lab;
-    $log->waktu_keluar = now();
-    $log->status = 'selesai';
-    $log->save();
-
-    return response()->json([
-        'status' => 'success',
-        'message' => 'Berhasil Check-out', 
-        'data' => $log
-    ]);
 }
 }
