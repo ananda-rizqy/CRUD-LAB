@@ -2,85 +2,68 @@
 
 namespace App\Http\Controllers\Api;
 
-use Illuminate\Support\Facades\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\Peminjaman;
-use App\Models\Alat;
-use App\Models\PenggunaanRuang;
+use App\Models\PeminjamanDetails;
+use App\Models\Alat; 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
+use Illuminate\Support\Facades\Auth;
 
 class PeminjamanController extends Controller
 {
-    //STAFF: Update data alat (sinkronisasi stok)//  
-    public function updateAlat(Request $request, $id)
-    {
-        $request->validate([
-            'kondisi' => 'required|in:Baik,Rusak,baik,rusak',
-            'nama_alat' => 'nullable|string',
-            'total' => 'nullable|integer',
-        ]);
-
-        return DB::transaction(function () use ($request, $id) {
-            $alat = Alat::findOrFail($id);
-
-            $kondisiLama = ucfirst(strtolower($alat->kondisi));
-            $kondisiBaru = ucfirst(strtolower($request->kondisi));
-
-            $alat->update($request->all());
-
-            if ($kondisiLama === 'Rusak' && $kondisiBaru === 'Baik') {
-                $alat->update(['tersedia' => $alat->total]);
-            } 
-            else if ($kondisiLama === 'Baik' && $kondisiBaru === 'Rusak') {
-                $alat->update(['tersedia' => 0]);
-            }
-
-            return response()->json([
-                'status' => 'sukses',
-                'message' => 'Kondisi alat diperbarui dan stok telah disinkronkan!',
-                'data' => $alat
-            ]);
-        });
-    }
-
-    //MAHASISWA: Mengajukan Peminjaman//  
+    // MAHASISWA: Mengajukan Peminjaman (Proses Keranjang)
     public function store(Request $request)
     {
         $request->validate([
-            'alat_id' => 'required|exists:alats,id',
-            'tujuan'  => 'required|string|max:255',
+            'ruangan_lab' => 'required|string',
+            'tujuan'      => 'required|string',
+            'items'       => 'required|array|min:1', // Daftar alat dari keranjang
+            'items.*.id'  => 'required|exists:alats,id',
+            'items.*.qty' => 'required|integer|min:1',
         ]);
 
         try {
-            $peminjaman = Peminjaman::create([
-                'user_id'           => Auth::id(), 
-                'alat_id'           => $request->alat_id,
-                'tujuan_penggunaan' => $request->tujuan, 
-                'waktu_pinjam'      => now()->toTimeString(),
-                'status'            => 'pending',
-            ]);
+            return DB::transaction(function () use ($request) {
+                // 1. Simpan Header Peminjaman
+                $peminjaman = Peminjaman::create([
+                    'user_id'           => Auth::id(), 
+                    'ruangan_lab'       => $request->ruangan_lab,
+                    'tujuan_penggunaan' => $request->tujuan, 
+                    'waktu_pinjam'      => now(),
+                    'status'            => 'pending',
+                ]);
 
-            return response()->json([
-                'status'  => 'sukses',
-                'message' => 'Peminjaman berhasil diajukan!',
-                'data'    => $peminjaman
-            ], 201);
+                // 2. Simpan Detail (Isi Keranjang)
+                foreach ($request->items as $item) {
+                    PeminjamanDetails::create([
+                        'peminjaman_id' => $peminjaman->id,
+                        'alat_id'       => $item['id'],
+                        'jumlah_pinjam' => $item['qty'],
+                    ]);
+                }
 
+                return response()->json([
+                    'status'  => 'sukses',
+                    'message' => 'Peminjaman berhasil diajukan! Menunggu persetujuan staff.',
+                    'data'    => $peminjaman->load('details.alat')
+                ], 201);
+            });
         } catch (\Exception $e) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Gagal menyimpan data: ' . $e->getMessage()
+                'message' => 'Gagal menyimpan peminjaman: ' . $e->getMessage()
             ], 500);
         }
     }
 
-    //STAFF: Melihat semua daftar pinjaman//  
+    // STAFF: Melihat semua daftar pinjaman
     public function index()
     {
-        $peminjaman = Peminjaman::with(['user', 'alat'])
-            ->orderBy('created_at', 'desc')
+        // Mengambil data peminjaman beserta detail alat di dalamnya
+        $peminjaman = Peminjaman::with(['user', 'details.alat'])
+            ->orderByRaw("FIELD(status, 'pending', 'approved', 'ongoing', 'returned', 'rejected')")
+            ->latest()
             ->get();
 
         return response()->json([
@@ -89,196 +72,163 @@ class PeminjamanController extends Controller
         ]);
     }
 
-    //STAFF: Menyetujui Pengajuan//  
+    // STAFF: Menyetujui Pengajuan (Sekaligus Potong Stok Semua Alat)
     public function setujui($id)
     {
         return DB::transaction(function () use ($id) {
-            $pinjam = Peminjaman::findOrFail($id);
-            $alat = Alat::where('id', $pinjam->alat_id)->first();
+            $pinjam = Peminjaman::with('details.alat')->findOrFail($id);
 
             if ($pinjam->status !== 'pending') {
-                return response()->json(['message' => 'Status peminjaman bukan pending.'], 400);
+                return response()->json(['message' => 'Status bukan pending.'], 400);
             }
 
-            if ($alat->tersedia <= 0) {
-                return response()->json([
-                    'message' => "Stok alat {$alat->nama_alat} kosong di database (Tersedia: {$alat->tersedia})",
-                ], 400);
+            // Cek stok untuk semua alat di keranjang sebelum menyetujui
+            foreach ($pinjam->details as $detail) {
+                if ($detail->alat->jumlah < $detail->jumlah_pinjam) {
+                    return response()->json([
+                        'message' => "Stok alat {$detail->alat->nama_alat} tidak mencukupi!"
+                    ], 400);
+                }
             }
 
+            // Jika semua stok aman, update status dan potong stok
             $pinjam->update(['status' => 'approved']);
-            $alat->decrement('tersedia');
 
-            return response()->json(['message' => 'Peminjaman disetujui. Mahasiswa wajib upload foto kondisi awal.']);
+            foreach ($pinjam->details as $detail) {
+                $detail->alat->decrement('jumlah', $detail->jumlah_pinjam);
+            }
+
+            return response()->json(['message' => 'Peminjaman disetujui. Stok alat telah dikurangi.']);
         });
     }
 
-    //MAHASISWA: Upload Foto Sebelum Ambil Alat//  
+    // MAHASISWA: Upload Foto Sebelum (Ubah status ke Ongoing)
     public function uploadBefore(Request $request, $id)
-    {
-        $request->validate([
-            'foto_before' => 'required|image|mimes:jpeg,png,jpg|max:2048',
-        ]);
+{
+    $request->validate([
+        'foto_before' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+    ]);
 
-        $pinjam = Peminjaman::findOrFail($id);
+    $pinjam = Peminjaman::findOrFail($id);
 
-        if ($pinjam->user_id !== Auth::id()) {
-            return response()->json(['message' => 'Bukan akses Anda.'], 403);
-        }
+    // Keamanan: Pastikan hanya peminjaman yang sudah disetujui yang bisa upload foto
+    if ($pinjam->status !== 'approved') {
+        return response()->json(['message' => 'Peminjaman belum disetujui staff atau sudah berjalan.'], 400);
+    }
 
-        if ($pinjam->status !== 'approved') {
-            return response()->json(['message' => 'Peminjaman belum disetujui staff.'], 400);
-        }
-
+    if ($request->hasFile('foto_before')) {
         $file = $request->file('foto_before');
-        $namaFile = time() . '_before_' . $id . '.' . $file->getClientOriginalExtension();
+        $namaFile = time() . '_' . $file->getClientOriginalName();
         $path = $file->storeAs('peminjaman/before', $namaFile, 'public');
-        
+
         $pinjam->update([
             'foto_before' => $path,
             'tanggal_diambil' => now(),
-            'status' => 'ongoing'
+            'status' => 'ongoing' // Status berubah otomatis!
         ]);
 
-        return response()->json(['message' => 'Foto berhasil diunggah. Alat resmi dipinjam!']);
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Foto berhasil diunggah. Selamat praktikum!',
+            'data' => $pinjam
+        ]);
     }
 
-    //MAHASISWA: Proses Pengembalian//  
+    return response()->json(['message' => 'File tidak ditemukan.'], 400);
+    }
+
+    // MAHASISWA: Pengembalian (Status Kembali ke Tersedia jika Baik)
     public function kembalikan(Request $request, $id)
     {
         $request->validate([
             'foto_after' => 'required|image|mimes:jpeg,png,jpg|max:2048',
-            'kondisi_kembali' => 'required|in:Baik,Rusak,baik,rusak',
-            'deskripsi_kerusakan' => 'required_if:kondisi_kembali,Rusak,rusak',
+            'kondisi_kembali' => 'required|string',
+            'deskripsi_kerusakan' => 'nullable|string',
         ]);
 
         return DB::transaction(function () use ($request, $id) {
-            $pinjam = Peminjaman::findOrFail($id);
-            $alat = $pinjam->alat;
+            $pinjam = Peminjaman::with('details.alat')->findOrFail($id);
 
-            if ($pinjam->status === 'returned') {
-                return response()->json(['message' => 'Alat sudah pernah dikembalikan.'], 400);
+            if ($pinjam->status !== 'ongoing') {
+                return response()->json(['message' => 'Alat belum diambil atau sudah dikembalikan.'], 400);
             }
 
             $file = $request->file('foto_after');
-            $namaFile = time() . '_after_' . $id . '.' . $file->getClientOriginalExtension();
-            $path = $file->storeAs('peminjaman/after', $namaFile, 'public');
+            $path = $file->store('peminjaman/after', 'public');
             
-            $kondisi = ucfirst(strtolower($request->kondisi_kembali));
-
             $pinjam->update([
                 'status' => 'returned',
                 'foto_after' => $path,
-                'kondisi_kembali' => $kondisi,
-                'deskripsi_kerusakan' => $kondisi === 'Rusak' ? $request->deskripsi_kerusakan : null,
-                'tanggal_kembali' => now()->toDateString(),
-                'waktu_kembali'     => now()->toTimeString(),
+                'kondisi_kembali' => $request->kondisi_kembali,
+                'deskripsi_kerusakan' => $request->deskripsi_kerusakan,
+                'waktu_kembali' => now(),
+                'tanggal_kembali' => now(),
             ]);
 
-            if ($kondisi === 'Baik') {
-                $alat->increment('tersedia');
-            } else {
-                $alat->update(['kondisi' => 'Rusak']);
+            // Kembalikan stok alat
+            foreach ($pinjam->details as $detail) {
+                $detail->alat->increment('jumlah', $detail->jumlah_pinjam);
             }
 
-            return response()->json(['message' => 'Alat berhasil dikembalikan. Terima kasih!']);
+            return response()->json(['message' => 'Alat berhasil dikembalikan. Stok bertambah otomatis.']);
         });
     }
-    
-    public function riwayat()
+
+    //Laporan Kerusakan Staff
+   public function laporanRusak()
 {
     try {
-        $riwayat = Peminjaman::with(['user', 'alat'])
-            ->orderBy('created_at', 'desc')
+        // Kita ambil data dari tabel Peminjaman yang kondisinya rusak
+        $laporan = \App\Models\Peminjaman::with(['user', 'details.alat'])
+            ->where('kondisi_kembali', 'rusak')
+            ->orderBy('updated_at', 'desc')
             ->get()
-            ->map(function ($item) {
+            ->map(function ($pinjam) {
+                // Ambil semua nama alat dalam tiket ini
+                $daftarAlat = $pinjam->details->map(function($det) {
+                    return $det->alat->nama_alat ?? 'Alat';
+                })->implode(', ');
+
+                // Ambil kode tag dari alat pertama (sebagai perwakilan)
+                $firstDetail = $pinjam->details->first();
+
                 return [
-                    'id' => $item->id,
-                    'nama_mahasiswa' => $item->user->name ?? 'User Tidak Ada',
-                    'nim' => $item->user->nim_nip ?? '-', 
-                    'nama_alat' => $item->alat->nama_alat ?? 'Alat Terhapus',
-                    'kode_alat' => $item->alat->kode ?? '-',
-                    'tujuan_penggunaan' => $item->tujuan_penggunaan,
-                    'status' => $item->status,    
-                    'kondisi_kembali' => $item->kondisi_kembali,
-                    'foto_before' => $item->foto_before ? asset('storage/' . $item->foto_before) : null,
-                    'foto_after' => $item->foto_after ? asset('storage/' . $item->foto_after) : null,
+                    'id' => $pinjam->id,
+                    'nama_mahasiswa' => $pinjam->user->name ?? 'N/A', // Langsung ke user
+                    'nama_alat' => $daftarAlat,
+                    'kode_tag' => ($firstDetail && $firstDetail->alat) ? $firstDetail->alat->kode_tag : '-',
+                    'ruangan_lab' => $pinjam->ruangan_lab, // Langsung akses property, bukan lewat relasi lagi
+                    'deskripsi_kerusakan' => $pinjam->deskripsi_kerusakan ?? 'Tidak ada deskripsi',
+                    'tanggal_kembali' => $pinjam->tanggal_kembali,
+                    'foto_before' => $pinjam->foto_before ? asset('storage/' . $pinjam->foto_before) : null,
+                    'foto_after' => $pinjam->foto_after ? asset('storage/' . $pinjam->foto_after) : null,
                 ];
             });
 
         return response()->json([
             'status' => 'sukses',
-            'data' => $riwayat
+            'data' => $laporan
         ], 200);
 
     } catch (\Exception $e) {
         return response()->json([
             'status' => 'error',
-            'message' => 'Gagal Sinkronisasi: ' . $e->getMessage()
+            'message' => 'Gagal mengambil laporan rusak: ' . $e->getMessage()
         ], 500);
     }
 }
-public function laporanRusak()
-{
-    try {
-        $data = Peminjaman::with(['user', 'alat'])
-            ->where('kondisi_kembali', 'rusak') 
-            ->orderBy('updated_at', 'desc')
-            ->get()
-            ->map(function ($item) {
-                return [
-                    'id' => $item->id,
-                    'nama_mahasiswa' => $item->user->name ?? 'N/A',
-                    'nama_alat' => $item->alat->nama_alat ?? 'N/A',
-                    'kode_alat' => $item->alat->kode ?? '-',
-                    'deskripsi_kerusakan' => $item->deskripsi_kerusakan ?? 'Tidak ada deskripsi',
-                    'tanggal_kembali' => $item->updated_at->timezone('Asia/Jakarta')->format('d M Y, H:i'),
-                    'foto_before' => $item->foto_before,
-                    'foto_after' => $item->foto_after,
-                ];
-            });
 
-            return response()->json(['status' => 'sukses', 'data' => $data]);
-        } catch (\Exception $e) {
-            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
-        }
-    }
-
-public function riwayatMahasiswa()
-{
-    try {
-        $userId = Auth::id();
-        $riwayat = Peminjaman::with(['alat'])
-            ->where('user_id', $userId)
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function ($item) {
-                return [
-                    'id' => $item->id,
-                    'nama_alat' => $item->alat->nama_alat ?? 'Alat Terhapus',
-                    'kode_alat' => $item->alat->kode ?? '-',
-                    'status' => $item->status,
-                    'tujuan' => $item->tujuan_penggunaan,
-                    'kondisi_kembali' => $item->kondisi_kembali ?? '-',
-                    'tanggal_pinjam' => $item->created_at->timezone('Asia/Jakarta')->format('d M Y, H:i'),
-                    'tanggal_kembali' => $item->tanggal_kembali 
-                    ? \Carbon\Carbon::parse($item->tanggal_kembali)->timezone('Asia/Jakarta')->format('d M Y, H:i') 
-                    : null,
-                    'foto_before' => $item->foto_before ? asset('storage/' . $item->foto_before) : null,
-                    'foto_after' => $item->foto_after ? asset('storage/' . $item->foto_after) : null,
-                ];
-            });
+    // RIWAYAT MAHASISWA
+    public function riwayatMahasiswa()
+    {
+        $riwayat = Peminjaman::with('details.alat')
+            ->where('user_id', Auth::id())
+            ->latest()
+            ->get();
 
         return response()->json([
             'status' => 'sukses',
-            'data' => $riwayat
-        ], 200);
-
-    } catch (\Exception $e) {
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Gagal mengambil data: ' . $e->getMessage()
-        ], 500);
-        }
+            'data'   => $riwayat
+        ]);
     }
-} 
+}

@@ -7,12 +7,14 @@ use App\Http\Controllers\Api\PeminjamanController;
 use App\Http\Controllers\Api\RiwayatpinjamController;
 use App\Http\Controllers\Api\RiwayatruangController;
 use App\Http\Controllers\Api\RuangController;
+use App\Http\Controllers\Api\QrController;
 use App\Models\PenggunaanRuang;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 
 // / Menggunakan endpoint /auth/google agar lebih jelas bahwa ini login via SSO
 Route::post('/auth/google', [AuthController::class, 'loginGoogle']);
+Route::get('/generate-qr-pintu', [QrController::class, 'generatePintuMasuk']);
 
 // --- RUTE TERPROTEKSI (Harus Login via SSO/Sanctum) ---
 Route::middleware('auth:sanctum')->group(function () {
@@ -42,7 +44,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Khusus role mahasiswa
     Route::middleware('role:mahasiswa')->group(function () {
-        Route::get('/scan-alat/{kode}', [AlatController::class, 'scanAlat']);
         // daftar pinjaman aktif 
         Route::get('/peminjaman/aktif', function() {
             return App\Models\Peminjaman::with('alat')

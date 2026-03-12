@@ -9,21 +9,22 @@ class Peminjaman extends Model
 {
     use HasFactory;
 
+    // Nama tabel sesuai migration (tanpa s)
     protected $table = 'peminjaman'; 
 
     protected $fillable = [
         'user_id',            
-        'alat_id',
+        'ruangan_lab',
         'tujuan_penggunaan',
+        'status',             // pending, approved, ongoing, returned
+        'kondisi_kembali',
+        'deskripsi_kerusakan',
+        'foto_before',
+        'foto_after',
         'waktu_pinjam',       
         'waktu_kembali',      
         'tanggal_diambil',    
         'tanggal_kembali',    
-        'status',             // pending, approved, returned, rejected
-        'foto_before',
-        'foto_after',
-        'kondisi_kembali',    // baik, rusak
-        'deskripsi_kerusakan',
     ];
 
     protected $casts = [
@@ -33,13 +34,20 @@ class Peminjaman extends Model
         'tanggal_kembali' => 'datetime',
     ];
 
+    /**
+     * Relasi ke User (Siapa yang meminjam)
+     */
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    public function alat()
+    /**
+     * Relasi ke Detail (Isi keranjang/daftar alat)
+     * Karena satu peminjaman bisa berisi banyak alat
+     */
+    public function details()
     {
-        return $this->belongsTo(Alat::class, 'alat_id');
+        return $this->hasMany(PeminjamanDetails::class, 'peminjaman_id');
     }
-} 
+}
