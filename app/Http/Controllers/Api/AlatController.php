@@ -15,7 +15,7 @@ class AlatController extends Controller
         $search = $request->query('search');
         $laboratorium = $request->query('lab'); 
 
-        $query = Alat::query(); // Gunakan Alats
+        $query = Alat::query(); 
 
         if ($laboratorium) {
             $query->where('letak', 'like', "%{$laboratorium}%");
@@ -29,19 +29,13 @@ class AlatController extends Controller
             });
         }
 
-        // --- PERBAIKAN LOGIKA DISINI ---
-
-        // 1. Tampilan Detail (Staff ATAU Mahasiswa di menu Ketersediaan Umum)
-        // Kita tidak pakai Group By agar KODE TAG muncul per baris.
         if ($role === 'staff' || ($role === 'mahasiswa' && !$laboratorium)) {
             $data = $query->latest()->get();
             return response()->json($data, 200);
         }
 
-        // 2. Tampilan Agregasi (Hanya saat Mahasiswa sudah pilih Lab untuk Pinjam)
-        // Di sini Kode Tag memang tidak muncul karena kita menjumlahkan stok.
         $queryAgregasi = $query->select(
-                DB::raw('MIN(id) as id'), // Ambil satu ID perwakilan dari grup alat ini !!
+                DB::raw('MIN(id) as id'), 
                 'nama_alat', 
                 'letak',
                 DB::raw('SUM(jumlah) as jumlah'),

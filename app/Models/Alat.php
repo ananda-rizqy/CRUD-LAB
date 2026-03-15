@@ -12,8 +12,8 @@ class Alat extends Model
     protected $fillable = [
         'nama_alat',
         'letak',
-        'kode_tag', // Menggantikan 'kode'
-        'jumlah',   // Kolom tunggal untuk stok
+        'kode_tag', 
+        'jumlah',   
         'kondisi',
     ];
 

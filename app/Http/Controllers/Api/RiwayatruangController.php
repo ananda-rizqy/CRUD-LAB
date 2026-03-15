@@ -9,6 +9,7 @@ use App\Models\PenggunaanRuang;
 class RiwayatruangController extends Controller
 {
 
+//Khusus riwayat penggunaan ruang dosen
 public function riwayatDosen()
 {
     try {

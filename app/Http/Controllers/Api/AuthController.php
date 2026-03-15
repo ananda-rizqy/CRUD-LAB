@@ -34,10 +34,8 @@ class AuthController extends Controller
             $domain = $parts[1];
             $nimOnly = preg_replace('/[^0-9]/', '', $prefix);
 
-            // 1. Cari user berdasarkan email
             $user = User::where('email', $email)->first();
 
-            // 2. Logika Penentuan Role (Hanya jika user BARU)
             if (!$user) {
                 $role = null;
 
@@ -77,11 +75,11 @@ class AuthController extends Controller
                 ]);
             }
 
-            // 3. Generate Token Baru
+            //Generate Token Baru
             $user->tokens()->delete(); 
             $token = $user->createToken('auth_token')->plainTextToken;
 
-            // 4. Return Response Final
+            //Return Response Final
             return response()->json([
                 'status'  => 'sukses',
                 'message' => "Selamat Datang, " . $user->name,
@@ -89,7 +87,7 @@ class AuthController extends Controller
                     'id'      => $user->id,
                     'name'    => $user->name,
                     'email'   => $user->email,
-                    'role'    => $user->role, // Penting untuk frontend
+                    'role'    => $user->role, 
                     'nim_nip' => $user->nim_nip
                 ],
                 'token'   => $token

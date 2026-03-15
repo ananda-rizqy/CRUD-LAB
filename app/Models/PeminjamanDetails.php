@@ -8,8 +8,6 @@ use Illuminate\Database\Eloquent\Model;
 class PeminjamanDetails extends Model
 {
     use HasFactory;
-
-    // Sesuaikan dengan nama tabel di migration kamu (perhatikan double underscore jika ada)
     protected $table = 'peminjaman__details';
 
     protected $fillable = [
@@ -31,6 +29,6 @@ class PeminjamanDetails extends Model
      */
     public function alat()
     {
-        return $this->belongsTo(Alat::class, 'alat_id'); // Pastikan model alat kamu namanya Alats atau Alat
+        return $this->belongsTo(Alat::class, 'alat_id'); 
     }
 }

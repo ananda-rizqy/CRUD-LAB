@@ -9,7 +9,6 @@ class Peminjaman extends Model
 {
     use HasFactory;
 
-    // Nama tabel sesuai migration (tanpa s)
     protected $table = 'peminjaman'; 
 
     protected $fillable = [

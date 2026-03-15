@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Peminjaman;
 use App\Models\PeminjamanDetails;
-use App\Models\Alat; 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -18,14 +17,14 @@ class PeminjamanController extends Controller
         $request->validate([
             'ruangan_lab' => 'required|string',
             'tujuan'      => 'required|string',
-            'items'       => 'required|array|min:1', // Daftar alat dari keranjang
+            'items'       => 'required|array|min:1', 
             'items.*.id'  => 'required|exists:alats,id',
             'items.*.qty' => 'required|integer|min:1',
         ]);
 
         try {
             return DB::transaction(function () use ($request) {
-                // 1. Simpan Header Peminjaman
+                // Simpan Peminjaman
                 $peminjaman = Peminjaman::create([
                     'user_id'           => Auth::id(), 
                     'ruangan_lab'       => $request->ruangan_lab,
@@ -34,7 +33,7 @@ class PeminjamanController extends Controller
                     'status'            => 'pending',
                 ]);
 
-                // 2. Simpan Detail (Isi Keranjang)
+                // Simpan Detail (Isi Keranjang)
                 foreach ($request->items as $item) {
                     PeminjamanDetails::create([
                         'peminjaman_id' => $peminjaman->id,
@@ -124,7 +123,7 @@ class PeminjamanController extends Controller
         $pinjam->update([
             'foto_before' => $path,
             'tanggal_diambil' => now(),
-            'status' => 'ongoing' // Status berubah otomatis!
+            'status' => 'ongoing' 
         ]);
 
         return response()->json([
@@ -137,7 +136,7 @@ class PeminjamanController extends Controller
     return response()->json(['message' => 'File tidak ditemukan.'], 400);
     }
 
-    // MAHASISWA: Pengembalian (Status Kembali ke Tersedia jika Baik)
+    // MAHASISWA: Pengembalian (Status Kembali ke Tersedia)
     public function kembalikan(Request $request, $id)
     {
         $request->validate([
@@ -178,7 +177,6 @@ class PeminjamanController extends Controller
    public function laporanRusak()
 {
     try {
-        // Kita ambil data dari tabel Peminjaman yang kondisinya rusak
         $laporan = \App\Models\Peminjaman::with(['user', 'details.alat'])
             ->where('kondisi_kembali', 'rusak')
             ->orderBy('updated_at', 'desc')
@@ -189,15 +187,14 @@ class PeminjamanController extends Controller
                     return $det->alat->nama_alat ?? 'Alat';
                 })->implode(', ');
 
-                // Ambil kode tag dari alat pertama (sebagai perwakilan)
                 $firstDetail = $pinjam->details->first();
 
                 return [
                     'id' => $pinjam->id,
-                    'nama_mahasiswa' => $pinjam->user->name ?? 'N/A', // Langsung ke user
+                    'nama_mahasiswa' => $pinjam->user->name ?? 'N/A',
                     'nama_alat' => $daftarAlat,
                     'kode_tag' => ($firstDetail && $firstDetail->alat) ? $firstDetail->alat->kode_tag : '-',
-                    'ruangan_lab' => $pinjam->ruangan_lab, // Langsung akses property, bukan lewat relasi lagi
+                    'ruangan_lab' => $pinjam->ruangan_lab, 
                     'deskripsi_kerusakan' => $pinjam->deskripsi_kerusakan ?? 'Tidak ada deskripsi',
                     'tanggal_kembali' => $pinjam->tanggal_kembali,
                     'foto_before' => $pinjam->foto_before ? asset('storage/' . $pinjam->foto_before) : null,
