@@ -39,12 +39,18 @@ class AuthController extends Controller
             if (!$user) {
                 $role = null;
 
+                //Khusus akun staff
+                $allowedStaff = [
+                    'staff.labtelkom@gmail.com',
+                ];
+
                 // Cek Dosen berdasarkan domain kampus
                 if ($domain === 'dosen.polines.ac.id') {
                     $role = 'dosen';
                 } 
+                
                 // Cek Staff (Misal menggunakan gmail umum sesuai kodinganmu)
-                elseif ($domain === 'gmail.com') {
+                elseif ($domain === 'gmail.com' && in_array($email, $allowedStaff)) {
                     $role = 'staff';
                 } 
                 // Cek Mahasiswa berdasarkan prefix NIM
