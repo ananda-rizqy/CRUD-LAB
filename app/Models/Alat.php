@@ -19,7 +19,7 @@ class Alat extends Model
 
     public function peminjaman()
     {
-        return $this->hasMany(Peminjaman::class, 'alat_id');
+        return $this->belongsToMany(Peminjaman::class, 'peminjaman_details', 'alat_id', 'peminjaman_id');
     }
 
     protected static function boot()

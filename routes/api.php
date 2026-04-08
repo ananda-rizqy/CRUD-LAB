@@ -20,6 +20,7 @@ Route::get('/generate-qr-pintu', [QrController::class, 'generatePintuMasuk']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/alat', [AlatController::class, 'index']);
     Route::get('/alat/{id}', [AlatController::class, 'show']);
+    Route::get('/ruangan-list', [AlatController::class, 'getRuanganList']);
 
     //FITUR DEVICE
     Route::apiResource("device", DeviceController::class);

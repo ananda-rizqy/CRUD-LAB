@@ -9,6 +9,7 @@ class QrController extends Controller
 {
     public function generatePintuMasuk(): JsonResponse
     {
+        // $ipLaptop = "192.168.1.9";
         // Arahkan ke Login Page
         $targetUrl = "http://localhost:5173/login?from=pintu_lab";
         

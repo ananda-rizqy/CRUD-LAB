@@ -9,45 +9,88 @@ use Illuminate\Support\Facades\DB;
 
 class AlatController extends Controller
 {
-    public function index(Request $request) 
+
+    // Tambahkan daftar ruangan yang diizinkan agar konsisten
+    protected $daftarRuangan = [
+        'Laboratorium Barat',
+        'Laboratorium Timur',
+        'Laboratorium Broadcast',
+        'Laboratorium MST',
+    ];
+
+    // Endpoint baru untuk Frontend mengambil daftar dropdown
+    public function getRuanganList()
     {
-        $role = $request->query('role');
-        $search = $request->query('search');
-        $laboratorium = $request->query('lab'); 
-
-        $query = Alat::query(); 
-
-        if ($laboratorium) {
-            $query->where('letak', 'like', "%{$laboratorium}%");
-        }
-
-        if ($search) {
-            $query->where(function($q) use ($search) {
-                $q->where('nama_alat', 'like', "%{$search}%")
-                  ->orWhere('kode_tag', 'like', "%{$search}%")
-                  ->orWhere('letak', 'like', "%{$search}%");
-            });
-        }
-
-        if ($role === 'staff' || ($role === 'mahasiswa' && !$laboratorium)) {
-            $data = $query->latest()->get();
-            return response()->json($data, 200);
-        }
-
-        $queryAgregasi = $query->select(
-                DB::raw('MIN(id) as id'), 
-                'nama_alat', 
-                'letak',
-                DB::raw('SUM(jumlah) as jumlah'),
-                'kondisi',
-                DB::raw('GROUP_CONCAT(CASE WHEN kode_tag NOT LIKE "%KONSUMSI%" THEN kode_tag END SEPARATOR ", ") as kode_tag')
-            )
-            ->where('kondisi', 'baik') 
-            ->groupBy('nama_alat', 'letak', 'kondisi')
-            ->get();
-        
-        return response()->json($queryAgregasi, 200);
+        return response()->json($this->daftarRuangan);
     }
+
+    public function index(Request $request) 
+{
+    $role = $request->query('role');
+    $search = $request->query('search');
+    $laboratorium = $request->query('lab'); 
+    $for_peminjaman = $request->query('for_peminjaman');
+
+    $query = Alat::query(); 
+
+    // 1. Filter Laboratorium
+    if ($laboratorium) {
+        $query->where('letak', 'like', "%{$laboratorium}%");
+    }
+
+    // 2. Filter Pencarian
+    if ($search) {
+        $query->where(function($q) use ($search) {
+            $q->where('nama_alat', 'like', "%{$search}%")
+              ->orWhere('kode_tag', 'like', "%{$search}%")
+              ->orWhere('letak', 'like', "%{$search}%");
+        });
+    }
+
+    if ($role !== 'staff') {
+            $query->where('kondisi', 'baik')->where('jumlah', '>', 0);
+        }
+
+    // 3. Filter Anti-Tabrakan Peminjaman
+    if ($for_peminjaman) {
+        $query
+              ->whereDoesntHave('peminjamans', function ($q) {
+                  // Alat dianggap tidak tersedia jika statusnya salah satu di bawah ini
+                  $q->whereIn('status', ['pending', 'approved', 'ongoing']);
+              });
+    }
+
+    // 4. Response untuk Staff atau List Umum (Tanpa Agregasi)
+    if ($role === 'staff' || $role === 'dosen' || ($role === 'mahasiswa' && !$laboratorium)) {
+        $data = $query->latest()->get();
+        return response()->json($data, 200);
+    }
+
+    // 5. Response Agregasi (Pilihan Alat Mahasiswa)
+    $queryAgregasi = $query->select(
+            DB::raw('MIN(id) as id'), 
+            'nama_alat', 
+            'letak',
+            DB::raw('SUM(jumlah) as total_stok'),
+            DB::raw('GROUP_CONCAT(CASE WHEN kode_tag IS NOT NULL THEN kode_tag END SEPARATOR ",") as daftar_kode_tag')
+        )
+        ->where('kondisi', 'baik') 
+        ->groupBy('nama_alat', 'letak')
+        ->get();
+        
+    $result = $queryAgregasi->map(function ($item) {
+        return [
+            'id' => $item->id,
+            'nama_alat' => $item->nama_alat,
+            'letak' => $item->letak,
+            'jumlah' => (int) $item->total_stok,
+            'kode_tag_list' => $item->daftar_kode_tag ? explode(',', $item->daftar_kode_tag) : [],
+            'is_aset' => !empty($item->daftar_kode_tag)
+        ];
+    }); 
+    
+    return response()->json($result, 200);
+}
 
     public function store(Request $request)
     {
@@ -59,6 +102,15 @@ class AlatController extends Controller
                 'jumlah'    => 'required|integer|min:1',
                 'kondisi'   => 'required|in:baik,rusak',
             ]);
+
+            if (!empty($validated['kode_tag'])) {
+            if ($validated['jumlah'] > 1) {
+                return response()->json([
+                    'message' => 'Gagal tambah data',
+                    'error'   => 'Alat dengan kode tag unik jumlahnya tidak boleh lebih dari 1.'
+                ], 422);
+            }
+        }
 
             $kondisi = empty($validated['kode_tag']) ? 'baik' : $validated['kondisi'];
             
@@ -88,6 +140,9 @@ class AlatController extends Controller
 
         try {
             $alat = Alat::findOrFail($id);
+            if (!empty($validated['kode_tag'])) {
+                $validated['jumlah'] = 1;
+            }
             $kondisi = empty($validated['kode_tag']) ? 'baik' : $validated['kondisi'];
 
             $alat->update([
@@ -105,16 +160,39 @@ class AlatController extends Controller
     }
 
     public function destroy($id)
-    {
-        try {
-            $alat = Alat::findOrFail($id);
-            if (method_exists($alat, 'peminjaman') && $alat->peminjaman()->exists()) {
-                $alat->peminjaman()->delete();
-            }
-            $alat->delete();
-            return response()->json(['message' => 'Data berhasil dihapus']);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Gagal menghapus data', 'error' => $e->getMessage()], 500);
+{
+    try {
+        $alat = Alat::findOrFail($id);
+
+        // 1. Cek apakah alat sedang aktif dipinjam (status belum 'kembali')
+        // Kita join tabel peminjaman__details dengan tabel peminjaman
+        $sedangDipinjam = DB::table('peminjaman__details')
+            ->join('peminjaman', 'peminjaman__details.peminjaman_id', '=', 'peminjaman.id')
+            ->where('peminjaman__details.alat_id', $id)
+            ->where('peminjaman.status', 'dipinjam') // Pastikan string 'dipinjam' sesuai dengan DB kamu
+            ->exists();
+
+        if ($sedangDipinjam) {
+            return response()->json([
+                'message' => 'Gagal! Alat sedang digunakan oleh mahasiswa dan belum dikembalikan.'
+            ], 422);
         }
+
+        // 2. Jika tidak sedang dipinjam, kita hapus riwayat lamanya dulu (agar tidak error constraint)
+        // baru kemudian hapus alatnya.
+        DB::table('peminjaman__details')->where('alat_id', $id)->delete();
+        
+        $alat->delete();
+
+        return response()->json([
+            'message' => 'Alat berhasil dihapus (Riwayat peminjaman lama telah dibersihkan).'
+        ]);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Gagal menghapus data',
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
 }

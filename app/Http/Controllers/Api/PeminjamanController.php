@@ -12,50 +12,70 @@ use Illuminate\Support\Facades\Auth;
 class PeminjamanController extends Controller
 {
     // MAHASISWA: Mengajukan Peminjaman (Proses Keranjang)
-    public function store(Request $request)
-    {
-        $request->validate([
-            'ruangan_lab' => 'required|string',
-            'tujuan'      => 'required|string',
-            'items'       => 'required|array|min:1', 
-            'items.*.id'  => 'required|exists:alats,id',
-            'items.*.qty' => 'required|integer|min:1',
+   public function store(Request $request)
+{
+    // 1. Decode items jika dikirim via FormData (String JSON -> Array)
+    if ($request->has('items') && is_string($request->items)) {
+        $request->merge([
+            'items' => json_decode($request->items, true),
         ]);
-
-        try {
-            return DB::transaction(function () use ($request) {
-                // Simpan Peminjaman
-                $peminjaman = Peminjaman::create([
-                    'user_id'           => Auth::id(), 
-                    'ruangan_lab'       => $request->ruangan_lab,
-                    'tujuan_penggunaan' => $request->tujuan, 
-                    'waktu_pinjam'      => now(),
-                    'status'            => 'pending',
-                ]);
-
-                // Simpan Detail (Isi Keranjang)
-                foreach ($request->items as $item) {
-                    PeminjamanDetails::create([
-                        'peminjaman_id' => $peminjaman->id,
-                        'alat_id'       => $item['id'],
-                        'jumlah_pinjam' => $item['qty'],
-                    ]);
-                }
-
-                return response()->json([
-                    'status'  => 'sukses',
-                    'message' => 'Peminjaman berhasil diajukan! Menunggu persetujuan staff.',
-                    'data'    => $peminjaman->load('details.alat')
-                ], 201);
-            });
-        } catch (\Exception $e) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Gagal menyimpan peminjaman: ' . $e->getMessage()
-            ], 500);
-        }
     }
 
+    // 2. Validasi (Tambahkan foto_before jika ingin langsung upload saat ajukan)
+    $request->validate([
+        'ruangan_lab' => 'required|string',
+        'tujuan'      => 'required|string',
+        'items'       => 'required|array|min:1',
+        'items.*.id'  => 'required|exists:alats,id',
+        'items.*.qty' => 'required|integer|min:1',
+        'foto_before' => 'nullable|image|max:5120', // Opsional jika mau langsung foto
+    ]);
+
+    try {
+        return DB::transaction(function () use ($request) {
+            
+            // Handle foto jika ada
+            $pathFoto = null;
+            if ($request->hasFile('foto_before')) {
+                $file = $request->file('foto_before');
+                $namaFile = time() . '_' . $file->getClientOriginalName();
+                $pathFoto = $file->storeAs('peminjaman/before', $namaFile, 'public');
+            }
+
+            // 3. Simpan Peminjaman (Sesuaikan nama kolom DB kamu)
+            $peminjaman = Peminjaman::create([
+                'user_id'           => Auth::id(), 
+                'ruangan_lab'       => $request->ruangan_lab,
+                'tujuan_penggunaan' => $request->tujuan, // Pastikan kolom di DB namanya ini
+                'foto_before'       => $pathFoto,
+                'waktu_pinjam'      => now(),
+                'status'            => 'pending',
+            ]);
+
+            // 4. Simpan Detail
+            foreach ($request->items as $item) {
+                // Pastikan nama Model Detail benar (PeminjamanDetails atau PeminjamanDetail?)
+                \App\Models\PeminjamanDetails::create([
+                    'peminjaman_id' => $peminjaman->id,
+                    'alat_id'       => $item['id'],
+                    'jumlah_pinjam' => $item['qty'],
+                    'kode_tag'      => $item['kode_tag'] ?? null,
+                ]);
+            }
+
+            return response()->json([
+                'status'  => 'sukses',
+                'message' => 'Peminjaman berhasil diajukan!',
+                'data'    => $peminjaman->load('details.alat')
+            ], 201);
+        });
+    } catch (\Exception $e) {
+        return response()->json([
+            'status'  => 'error',
+            'message' => 'Gagal: ' . $e->getMessage() // Ini akan muncul di console log kamu
+        ], 500);
+    }
+}
     // STAFF: Melihat semua daftar pinjaman
     public function index()
     {
@@ -91,7 +111,7 @@ class PeminjamanController extends Controller
             }
 
             // Jika semua stok aman, update status dan potong stok
-            $pinjam->update(['status' => 'approved']);
+            $pinjam->update(['status' => 'ongoing']);
 
             foreach ($pinjam->details as $detail) {
                 $detail->alat->decrement('jumlah', $detail->jumlah_pinjam);
@@ -105,7 +125,7 @@ class PeminjamanController extends Controller
     public function uploadBefore(Request $request, $id)
 {
     $request->validate([
-        'foto_before' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+        'foto_before' => 'required|image|mimes:jpeg,png,jpg',
     ]);
 
     $pinjam = Peminjaman::findOrFail($id);
@@ -122,7 +142,7 @@ class PeminjamanController extends Controller
 
         $pinjam->update([
             'foto_before' => $path,
-            'tanggal_diambil' => now(),
+            'waktu_kembali' => now(),
             'status' => 'ongoing' 
         ]);
 
