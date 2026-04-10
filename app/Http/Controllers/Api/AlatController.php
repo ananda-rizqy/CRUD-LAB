@@ -12,85 +12,113 @@ class AlatController extends Controller
 
     // Tambahkan daftar ruangan yang diizinkan agar konsisten
     protected $daftarRuangan = [
-        'Laboratorium Barat',
-        'Laboratorium Timur',
-        'Laboratorium Broadcast',
-        'Laboratorium MST',
+        'Laboratorium Barat'            => 'Gedung Elektronika',
+        'Laboratorium Timur'            => 'Gedung Telekomunikasi',
+        'Ruang Broadcast'               => 'Gedung UPT Bahasa', 
+        'Laboratorium Jaringan Komputer'=> 'Gedung Magister Terapan',
+        // 'Laboratorium IOT'=> 'Gedung Magister Terapan',
     ];
 
     // Endpoint baru untuk Frontend mengambil daftar dropdown
     public function getRuanganList()
     {
-        return response()->json($this->daftarRuangan);
+        return response()->json(array_keys($this->daftarRuangan));
     }
 
     public function index(Request $request) 
-{
-    $role = $request->query('role');
-    $search = $request->query('search');
-    $laboratorium = $request->query('lab'); 
-    $for_peminjaman = $request->query('for_peminjaman');
+    {
+        $role = $request->query('role');
+        $search = $request->query('search');
+        $lab_group = $request->query('lab'); 
+        $for_peminjaman = $request->query('for_peminjaman');
 
-    $query = Alat::query(); 
+        $query = Alat::query(); 
 
-    // 1. Filter Laboratorium
-    if ($laboratorium) {
-        $query->where('letak', 'like', "%{$laboratorium}%");
-    }
+        // 1. FILTER BERDASARKAN GEDUNG
+        if ($lab_group) {
+            $ruanganTerkait = array_keys($this->daftarRuangan, $lab_group);
+            if (!empty($ruanganTerkait)) {
+                $query->whereIn('letak', $ruanganTerkait);
+            } else {
+                $query->where('letak', 'like', "%{$lab_group}%");
+            }
+        }
 
-    // 2. Filter Pencarian
-    if ($search) {
-        $query->where(function($q) use ($search) {
-            $q->where('nama_alat', 'like', "%{$search}%")
-              ->orWhere('kode_tag', 'like', "%{$search}%")
-              ->orWhere('letak', 'like', "%{$search}%");
-        });
-    }
+        // 2. Filter Pencarian
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('nama_alat', 'like', "%{$search}%")
+                ->orWhere('kode_tag', 'like', "%{$search}%")
+                ->orWhere('letak', 'like', "%{$search}%");
+            });
+        }
 
-    if ($role !== 'staff') {
+        if ($role !== 'staff') {
             $query->where('kondisi', 'baik')->where('jumlah', '>', 0);
         }
 
-    // 3. Filter Anti-Tabrakan Peminjaman
-    if ($for_peminjaman) {
-        $query
-              ->whereDoesntHave('peminjamans', function ($q) {
-                  // Alat dianggap tidak tersedia jika statusnya salah satu di bawah ini
-                  $q->whereIn('status', ['pending', 'approved', 'ongoing']);
-              });
-    }
+        // 4. Response untuk Staff/Dosen
+        if ($role === 'staff' || $role === 'dosen' || ($role === 'mahasiswa' && !$lab_group)) {
+            $data = $query->latest()->get();
+            return response()->json($data, 200);
+        }
 
-    // 4. Response untuk Staff atau List Umum (Tanpa Agregasi)
-    if ($role === 'staff' || $role === 'dosen' || ($role === 'mahasiswa' && !$laboratorium)) {
-        $data = $query->latest()->get();
-        return response()->json($data, 200);
-    }
+        // 5. Response Agregasi (Pilihan Alat Mahasiswa)
+        $queryAgregasi = $query
+            ->withCount([
+                'peminjamanDetails as sedang_dipinjam_count' => function ($q) {
+                    $q->whereHas('peminjaman', function ($sub) {
+                        $sub->whereIn(DB::raw('LOWER(status)'), [
+                            'pending', 'approved', 'ongoing', 'disetujui', 'dipinjam'
+                        ]);
+                    });
+                }
+            ])
+            ->get();
 
-    // 5. Response Agregasi (Pilihan Alat Mahasiswa)
-    $queryAgregasi = $query->select(
-            DB::raw('MIN(id) as id'), 
-            'nama_alat', 
-            'letak',
-            DB::raw('SUM(jumlah) as total_stok'),
-            DB::raw('GROUP_CONCAT(CASE WHEN kode_tag IS NOT NULL THEN kode_tag END SEPARATOR ",") as daftar_kode_tag')
-        )
-        ->where('kondisi', 'baik') 
-        ->groupBy('nama_alat', 'letak')
-        ->get();
-        
-    $result = $queryAgregasi->map(function ($item) {
+        $result = $queryAgregasi
+            ->groupBy(fn($item) => $item->nama_alat . '|' . $item->letak)
+            ->map(function ($group) {
+
+        $first = $group->first();
+
+        // 🔥 UNIT YANG TERSEDIA (tidak sedang dipinjam)
+        $unitTersedia = $group->filter(fn($item) => $item->sedang_dipinjam_count == 0);
+
+        if ($first->is_aset) {
+            // ✅ ASET: hitung dari unit bebas
+            $stokTersedia = $unitTersedia->count();
+        } else {
+            // ✅ NON ASET: pakai qty
+            $totalFisik = $group->sum('jumlah');
+
+            $totalDipinjam = $group->sum(function ($item) {
+                return $item->peminjamanDetails()
+                    ->whereHas('peminjaman', function ($q) {
+                        $q->whereIn(DB::raw('LOWER(status)'), [
+                            'pending', 'approved', 'ongoing', 'disetujui', 'dipinjam'
+                        ]);
+                    })
+                    ->sum('jumlah_pinjam');
+            });
+
+            $stokTersedia = $totalFisik - $totalDipinjam;
+        }
+
         return [
-            'id' => $item->id,
-            'nama_alat' => $item->nama_alat,
-            'letak' => $item->letak,
-            'jumlah' => (int) $item->total_stok,
-            'kode_tag_list' => $item->daftar_kode_tag ? explode(',', $item->daftar_kode_tag) : [],
-            'is_aset' => !empty($item->daftar_kode_tag)
+            'id'            => $first->id,
+            'nama_alat'     => $first->nama_alat,
+            'letak'         => $first->letak,
+            'jumlah'        => max(0, (int) $stokTersedia), // 🔥 ini sekarang stok REAL
+            'kode_tag_list' => $unitTersedia->pluck('kode_tag')->filter()->values()->all(),
+            'is_aset'       => (bool) $first->is_aset
         ];
-    }); 
-    
-    return response()->json($result, 200);
-}
+        })
+        ->filter(fn($item) => $item['jumlah'] > 0)
+        ->values();
+
+        return response()->json($result, 200);
+        }
 
     public function store(Request $request)
     {
@@ -114,17 +142,20 @@ class AlatController extends Controller
 
             $kondisi = empty($validated['kode_tag']) ? 'baik' : $validated['kondisi'];
             
+            $isAset = !empty($validated['kode_tag']) ? 1 : 0;
+
             $alat = Alat::create([
                 'nama_alat' => strtoupper($validated['nama_alat']),
                 'letak'     => $validated['letak'],
                 'kode_tag'  => $validated['kode_tag'] ?? null, 
                 'jumlah'    => $validated['jumlah'],
                 'kondisi'   => $kondisi,
+                'is_aset'   => $isAset,
             ]);
 
             return response()->json(['message' => 'Data berhasil ditambahkan', 'data' => $alat], 201);
         } catch (\Exception $e) {
-            return response()->json(['message' => 'Gagal tambah data', 'error' => $e->getMessage()], 500);
+            return response()->json(['message' => 'Kode Tag Tidak Boleh Sama', 'error' => $e->getMessage()], 500);
         }
     }
 

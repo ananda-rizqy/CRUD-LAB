@@ -41,10 +41,6 @@ class Peminjaman extends Model
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    /**
-     * Relasi ke Detail (Isi keranjang/daftar alat)
-     * Karena satu peminjaman bisa berisi banyak alat
-     */
     public function details()
     {
         return $this->hasMany(PeminjamanDetails::class, 'peminjaman_id');

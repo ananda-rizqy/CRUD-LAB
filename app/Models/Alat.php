@@ -15,22 +15,39 @@ class Alat extends Model
         'kode_tag', 
         'jumlah',   
         'kondisi',
+        'is_aset',
     ];
 
     public function peminjaman()
     {
-        return $this->belongsToMany(Peminjaman::class, 'peminjaman_details', 'alat_id', 'peminjaman_id');
+        return $this->belongsToMany(Peminjaman::class, 'peminjaman__details', 'alat_id', 'peminjaman_id');
+    }
+
+    public function peminjamanDetails()
+    {
+    return $this->hasMany(
+        \App\Models\PeminjamanDetails::class,
+        'alat_id'
+    );
     }
 
     protected static function boot()
     {
-        parent::boot();
+    parent::boot();
 
-        static::creating(function ($alat) {
-            if (empty($alat->kode_tag)) {
-                $alat->kondisi = 'Baik';
-            }
-        });
+    // Saat create
+    static::creating(function ($alat) {
+        if (empty($alat->kode_tag)) {
+            $alat->kondisi = 'Baik';
+        }
+    });
+
+    
+    static::saving(function ($alat) {
+        if ($alat->is_aset) {
+            $alat->jumlah = 1; // paksa aset selalu 1
+        }
+    });
     }
 
     // Accessor untuk format tanggal agar rapi di JSON
