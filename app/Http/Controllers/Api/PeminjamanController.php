@@ -13,150 +13,134 @@ class PeminjamanController extends Controller
 {
     // MAHASISWA: Mengajukan Peminjaman (Proses Keranjang)
     public function store(Request $request)
-{
-    if ($request->has('items') && is_string($request->items)) {
-        $request->merge(['items' => json_decode($request->items, true)]);
-    }
+    {
+        if ($request->has('items') && is_string($request->items)) {
+            $request->merge(['items' => json_decode($request->items, true)]);
+        }
 
-    $request->validate([
-        'ruangan_lab' => 'required|string',
-        'tujuan'      => 'required|string',
-        'items'       => 'required|array|min:1',
-        'items.*.id'  => 'required|exists:alats,id',
-        'foto_before' => 'required|image|max:5120',
-    ]);
+        $request->validate([
+            'ruangan_lab' => 'required|string',
+            'tujuan'      => 'required|string',
+            'items'       => 'required|array|min:1',
+            'items.*.id'  => 'required|exists:alats,id',
+            'foto_before' => 'required|image|max:5120',
+        ]);
 
-    try {
-        return DB::transaction(function () use ($request) {
+        try {
+            return DB::transaction(function () use ($request) {
 
-            // ======================
-            // 🔥 VALIDASI SAJA (TANPA INSERT & TANPA UBAH STOK)
-            // ======================
-            foreach ($request->items as $item) {
+                foreach ($request->items as $item) {
 
-                $alat = \App\Models\Alat::lockForUpdate()->find($item['id']);
-
-                if (!$alat) {
-                    throw new \Exception("Alat tidak ditemukan.");
-                }
-
-                // 🔵 ASET
-                if ($alat->is_aset) {
-
-                    $tagsRequested = $item['kode_tag_list'] ?? [];
-
-                    if (empty($tagsRequested)) {
-                        throw new \Exception("Harap pilih unit untuk {$alat->nama_alat}");
+                    $alat = \App\Models\Alat::lockForUpdate()->find($item['id']);
+                    if (!$alat) {
+                        throw new \Exception("Alat tidak ditemukan.");
                     }
 
-                    if (count($tagsRequested) !== count(array_unique($tagsRequested))) {
-                        throw new \Exception("Tidak boleh pilih unit yang sama!");
-                    }
+                    // ASET
+                    if ($alat->is_aset) {
 
-                    foreach ($tagsRequested as $tag) {
+                        $tagsRequested = $item['kode_tag_list'] ?? [];
 
-                        $unit = \App\Models\Alat::where('kode_tag', $tag)
-                            ->where('kondisi', 'Baik') // 🔥 fix huruf
-                            ->lockForUpdate()
-                            ->first();
-
-                        if (!$unit) {
-                            throw new \Exception("Unit {$tag} tidak tersedia.");
+                        if (empty($tagsRequested)) {
+                            throw new \Exception("Harap pilih unit untuk {$alat->nama_alat}");
                         }
 
-                        $isBusy = \App\Models\PeminjamanDetails::where('alat_id', $unit->id)
-                            ->whereHas('peminjaman', function ($q) {
-                                $q->whereIn('status', ['pending', 'approved', 'ongoing']);
-                            })
-                            ->exists();
+                        if (count($tagsRequested) !== count(array_unique($tagsRequested))) {
+                            throw new \Exception("Tidak boleh pilih unit yang sama!");
+                        }
 
-                        if ($isBusy) {
-                            throw new \Exception("Unit {$alat->nama_alat} ({$tag}) sedang dipinjam.");
+                        foreach ($tagsRequested as $tag) {
+
+                            $unit = \App\Models\Alat::where('kode_tag', $tag)
+                                ->where('kondisi', 'Baik') 
+                                ->lockForUpdate()
+                                ->first();
+
+                            if (!$unit) {
+                                throw new \Exception("Unit {$tag} tidak tersedia.");
+                            }
+
+                            $isBusy = \App\Models\PeminjamanDetails::where('alat_id', $unit->id)
+                                ->whereHas('peminjaman', function ($q) {
+                                    $q->whereIn('status', ['pending', 'approved', 'ongoing']);
+                                })
+                                ->exists();
+
+                            if ($isBusy) {
+                                throw new \Exception("Unit {$alat->nama_alat} ({$tag}) sedang dipinjam.");
+                            }
+                        }
+
+                    } 
+                    // NON ASET
+                    else {
+
+                        $qty = $item['qty'] ?? 1;
+
+                        if ($alat->jumlah < $qty) {
+                            throw new \Exception("Stok {$alat->nama_alat} tidak mencukupi!");
                         }
                     }
-
-                } 
-                // 🟢 NON ASET
-                else {
-
-                    $qty = $item['qty'] ?? 1;
-
-                    if ($alat->jumlah < $qty) {
-                        throw new \Exception("Stok {$alat->nama_alat} tidak mencukupi!");
-                    }
                 }
-            }
 
-            // ======================
-            // 📸 UPLOAD
-            // ======================
-            $pathFoto = $request->file('foto_before')->store('peminjaman/before', 'public');
+                $pathFoto = $request->file('foto_before')->store('peminjaman/before', 'public');
 
-            // ======================
-            // 🧾 HEADER
-            // ======================
-            $peminjaman = \App\Models\Peminjaman::create([
-                'user_id'           => Auth::id(),
-                'ruangan_lab'       => $request->ruangan_lab,
-                'tujuan_penggunaan' => $request->tujuan,
-                'foto_before'       => $pathFoto,
-                'waktu_pinjam'      => now(),
-                'status'            => 'pending',
-            ]);
+                $peminjaman = \App\Models\Peminjaman::create([
+                    'user_id'           => Auth::id(),
+                    'ruangan_lab'       => $request->ruangan_lab,
+                    'tujuan_penggunaan' => $request->tujuan,
+                    'foto_before'       => $pathFoto,
+                    'waktu_pinjam'      => now(),
+                    'status'            => 'pending',
+                ]);
 
-            if (!$peminjaman || !$peminjaman->id) {
-                throw new \Exception("Gagal membuat peminjaman");
-            }
+                if (!$peminjaman || !$peminjaman->id) {
+                    throw new \Exception("Gagal membuat peminjaman");
+                }
 
-            // ======================
-            // 📦 DETAIL + UPDATE STOK
-            // ======================
-            foreach ($request->items as $item) {
+                foreach ($request->items as $item) {
 
-                $alat = \App\Models\Alat::lockForUpdate()->find($item['id']);
+                    $alat = \App\Models\Alat::lockForUpdate()->find($item['id']);
 
-                if ($alat->is_aset) {
+                    if ($alat->is_aset) {
 
-                    foreach ($item['kode_tag_list'] as $tag) {
+                        foreach ($item['kode_tag_list'] as $tag) {
 
-                        $unit = \App\Models\Alat::where('kode_tag', $tag)->first();
+                            $unit = \App\Models\Alat::where('kode_tag', $tag)->first();
+
+                            \App\Models\PeminjamanDetails::create([
+                                'peminjaman_id' => $peminjaman->id,
+                                'alat_id'       => $unit->id,
+                                'jumlah_pinjam' => 1,
+                            ]);
+                        }
+
+                    } else {
+
+                        $qty = $item['qty'];
 
                         \App\Models\PeminjamanDetails::create([
                             'peminjaman_id' => $peminjaman->id,
-                            'alat_id'       => $unit->id,
-                            'jumlah_pinjam' => 1,
+                            'alat_id'       => $alat->id,
+                            'jumlah_pinjam' => $qty,
                         ]);
                     }
-
-                } else {
-
-                    $qty = $item['qty'];
-
-                    // 🔥 KURANGI STOK DI SINI (BENAR)
-                    $alat->decrement('jumlah', $qty);
-
-                    \App\Models\PeminjamanDetails::create([
-                        'peminjaman_id' => $peminjaman->id,
-                        'alat_id'       => $alat->id,
-                        'jumlah_pinjam' => $qty,
-                    ]);
                 }
-            }
 
+                return response()->json([
+                    'status' => 'sukses',
+                    'message' => 'Peminjaman berhasil diajukan'
+                ], 201);
+
+            });
+
+        } catch (\Exception $e) {
             return response()->json([
-                'status' => 'sukses',
-                'message' => 'Peminjaman berhasil diajukan'
-            ], 201);
-
-        });
-
-    } catch (\Exception $e) {
-        return response()->json([
-            'status' => 'error',
-            'message' => $e->getMessage()
-        ], 422);
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 422);
+        }
     }
-}
 
     // STAFF: Melihat semua daftar pinjaman
     public function index()
@@ -186,14 +170,10 @@ class PeminjamanController extends Controller
             foreach ($pinjam->details as $detail) {
                 $alat = $detail->alat;
 
-                // --- LOGIKA UNTUK BARANG KONSUMSI ---
                 if (!$alat->is_aset) {
-                    // Barang konsumsi benar-benar dicek stok fisiknya
                     if ($alat->jumlah < $detail->jumlah_pinjam) {
                         throw new \Exception("Gagal! Stok fisik {$alat->nama_alat} di gudang tidak mencukupi.");
                     }
-                    // Potong stok permanen
-                    $alat->decrement('jumlah', $detail->jumlah_pinjam);
                 }
             }
 
@@ -240,14 +220,15 @@ class PeminjamanController extends Controller
                 'message' => 'Foto berhasil diunggah. Selamat praktikum!',
                 'data' => $pinjam
             ]);
-        }
+    
 
         return response()->json(['message' => 'File tidak ditemukan.'], 400);
         }
+    }
 
-        // MAHASISWA: Pengembalian (Status Kembali ke Tersedia)
-        public function kembalikan(Request $request, $id)
-        {
+    // MAHASISWA: Pengembalian (Status Kembali ke Tersedia)
+    public function kembalikan(Request $request, $id)
+    {
             $request->validate([
                 'foto_after' => 'required|image|mimes:jpeg,png,jpg|max:2048',
                 'kondisi_kembali' => 'required|string',
@@ -277,24 +258,19 @@ class PeminjamanController extends Controller
                 foreach ($pinjam->details as $detail) {
                    $alat = $detail->alat;
 
-                    // ❌ ASET → JANGAN DIUBAH JUMLAHNYA
                     if ($alat->is_aset) {
-                        // cukup dilepas dari status pinjam (sudah dilakukan via status peminjaman)
                         continue;
                     }
-
-                    // ✅ NON ASET → baru tambah stok
-                    $alat->increment('jumlah', $detail->jumlah_pinjam);
                 }
 
 
                 return response()->json(['message' => 'Alat berhasil dikembalikan. Stok bertambah otomatis.']);
             });
-        }
+    }
 
-        //Laporan Kerusakan Staff
-        public function laporanRusak()
-        {
+    //Laporan Kerusakan Staff
+    public function laporanRusak()
+    {
             try {
                 $laporan = \App\Models\Peminjaman::with(['user', 'details.alat'])
                     ->where('kondisi_kembali', 'rusak')
@@ -332,11 +308,11 @@ class PeminjamanController extends Controller
                     'message' => 'Gagal mengambil laporan rusak: ' . $e->getMessage()
                 ], 500);
             }
-        }
+    }
 
-        // RIWAYAT MAHASISWA
-        public function riwayatMahasiswa()
-        {
+    // RIWAYAT MAHASISWA
+    public function riwayatMahasiswa()
+    {
             $riwayat = Peminjaman::with('details.alat')
                 ->where('user_id', Auth::id())
                 ->latest()
@@ -346,5 +322,5 @@ class PeminjamanController extends Controller
                 'status' => 'sukses',
                 'data'   => $riwayat
             ]);
-        }
+    }
     }

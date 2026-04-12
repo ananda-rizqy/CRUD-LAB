@@ -64,43 +64,47 @@ class AlatController extends Controller
         }
 
         // 5. Response Agregasi (Pilihan Alat Mahasiswa)
-        $queryAgregasi = $query
-            ->withCount([
-                'peminjamanDetails as sedang_dipinjam_count' => function ($q) {
-                    $q->whereHas('peminjaman', function ($sub) {
-                        $sub->whereIn(DB::raw('LOWER(status)'), [
-                            'pending', 'approved', 'ongoing', 'disetujui', 'dipinjam'
-                        ]);
-                    });
-                }
-            ])
-            ->get();
+        $dataAgregasi = Alat::where('kondisi', 'baik')
+        ->when($lab_group, function($q) use ($ruanganTerkait, $lab_group) {
+            return !empty($ruanganTerkait) ? $q->whereIn('letak', $ruanganTerkait) : $q->where('letak', 'like', "%{$lab_group}%");
+        })
+        ->when($search, function($q) use ($search) {
+            return $q->where('nama_alat', 'like', "%{$search}%");
+        })
+        ->withCount([
+            'peminjamanDetails as sedang_dipinjam_count' => function ($q) {
+                $q->whereHas('peminjaman', function ($sub) {
+                    $sub->whereIn(DB::raw('LOWER(status)'), ['pending', 'approved', 'ongoing', 'disetujui', 'dipinjam']);
+                });
+            }
+        ])
+        ->withSum(['peminjamanDetails as total_qty_dipinjam' => function ($q) {
+            $q->whereHas('peminjaman', function ($sub) {
+                $sub->whereIn(DB::raw('LOWER(status)'), ['pending', 'approved', 'ongoing', 'disetujui', 'dipinjam']);
+        });
+        }], 'jumlah_pinjam') 
+        ->get();
 
-        $result = $queryAgregasi
+        $result = $dataAgregasi
             ->groupBy(fn($item) => $item->nama_alat . '|' . $item->letak)
             ->map(function ($group) {
 
         $first = $group->first();
 
-        // 🔥 UNIT YANG TERSEDIA (tidak sedang dipinjam)
+        // UNIT YANG TERSEDIA (tidak sedang dipinjam)
         $unitTersedia = $group->filter(fn($item) => $item->sedang_dipinjam_count == 0);
 
         if ($first->is_aset) {
-            // ✅ ASET: hitung dari unit bebas
+            // ASET: hitung dari unit bebas
             $stokTersedia = $unitTersedia->count();
-        } else {
-            // ✅ NON ASET: pakai qty
-            $totalFisik = $group->sum('jumlah');
 
-            $totalDipinjam = $group->sum(function ($item) {
-                return $item->peminjamanDetails()
-                    ->whereHas('peminjaman', function ($q) {
-                        $q->whereIn(DB::raw('LOWER(status)'), [
-                            'pending', 'approved', 'ongoing', 'disetujui', 'dipinjam'
-                        ]);
-                    })
-                    ->sum('jumlah_pinjam');
-            });
+        } else {
+
+            // NON ASET
+            $totalFisik = $group->sum('jumlah');
+            $totalDipinjam = $group->sum(function($item) {
+                    return (int) $item->total_qty_dipinjam;
+                });
 
             $stokTersedia = $totalFisik - $totalDipinjam;
         }
@@ -109,16 +113,15 @@ class AlatController extends Controller
             'id'            => $first->id,
             'nama_alat'     => $first->nama_alat,
             'letak'         => $first->letak,
-            'jumlah'        => max(0, (int) $stokTersedia), // 🔥 ini sekarang stok REAL
+            'jumlah'        => max(0, (int) $stokTersedia), 
             'kode_tag_list' => $unitTersedia->pluck('kode_tag')->filter()->values()->all(),
             'is_aset'       => (bool) $first->is_aset
         ];
         })
-        ->filter(fn($item) => $item['jumlah'] > 0)
         ->values();
 
         return response()->json($result, 200);
-        }
+    }
 
     public function store(Request $request)
     {
@@ -195,12 +198,10 @@ class AlatController extends Controller
     try {
         $alat = Alat::findOrFail($id);
 
-        // 1. Cek apakah alat sedang aktif dipinjam (status belum 'kembali')
-        // Kita join tabel peminjaman__details dengan tabel peminjaman
         $sedangDipinjam = DB::table('peminjaman__details')
             ->join('peminjaman', 'peminjaman__details.peminjaman_id', '=', 'peminjaman.id')
             ->where('peminjaman__details.alat_id', $id)
-            ->where('peminjaman.status', 'dipinjam') // Pastikan string 'dipinjam' sesuai dengan DB kamu
+            ->where('peminjaman.status', 'dipinjam') 
             ->exists();
 
         if ($sedangDipinjam) {
@@ -209,8 +210,6 @@ class AlatController extends Controller
             ], 422);
         }
 
-        // 2. Jika tidak sedang dipinjam, kita hapus riwayat lamanya dulu (agar tidak error constraint)
-        // baru kemudian hapus alatnya.
         DB::table('peminjaman__details')->where('alat_id', $id)->delete();
         
         $alat->delete();
