@@ -74,13 +74,13 @@ class AlatController extends Controller
         ->withCount([
             'peminjamanDetails as sedang_dipinjam_count' => function ($q) {
                 $q->whereHas('peminjaman', function ($sub) {
-                    $sub->whereIn(DB::raw('LOWER(status)'), ['pending', 'approved', 'ongoing', 'disetujui', 'dipinjam']);
+                    $sub->whereIn(DB::raw('LOWER(status)'), ['pending', 'approved', 'ongoing', 'disetujui', 'dipinjam', 'booking']);
                 });
             }
         ])
         ->withSum(['peminjamanDetails as total_qty_dipinjam' => function ($q) {
             $q->whereHas('peminjaman', function ($sub) {
-                $sub->whereIn(DB::raw('LOWER(status)'), ['pending', 'approved', 'ongoing', 'disetujui', 'dipinjam']);
+                $sub->whereIn(DB::raw('LOWER(status)'), ['pending', 'approved', 'ongoing', 'disetujui', 'dipinjam', 'booking']);
         });
         }], 'jumlah_pinjam') 
         ->get();
@@ -91,7 +91,7 @@ class AlatController extends Controller
 
         $first = $group->first();
 
-        // UNIT YANG TERSEDIA (tidak sedang dipinjam)
+        // UNIT YANG TERSEDIA (tidak sedang dipinjam atau dibooking)
         $unitTersedia = $group->filter(fn($item) => $item->sedang_dipinjam_count == 0);
 
         if ($first->is_aset) {

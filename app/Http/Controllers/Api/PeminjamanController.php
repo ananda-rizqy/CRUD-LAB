@@ -23,7 +23,9 @@ class PeminjamanController extends Controller
             'tujuan'      => 'required|string',
             'items'       => 'required|array|min:1',
             'items.*.id'  => 'required|exists:alats,id',
-            'foto_before' => 'required|image|max:5120',
+            'foto_before' => $request->filled('waktu_mulai') ? 'nullable|image|max:5120' : 'required|image|max:5120',
+            'waktu_mulai'   => 'nullable|date',
+            'waktu_selesai' => 'nullable|date|after:waktu_mulai',
         ]);
 
         try {
@@ -83,15 +85,25 @@ class PeminjamanController extends Controller
                     }
                 }
 
-                $pathFoto = $request->file('foto_before')->store('peminjaman/before', 'public');
+
+                $waktuMulai = $request->waktu_mulai ?? now();
+                $jenis = $request->waktu_mulai ? 'pesanan' : 'langsung';
+
+                $pathFoto = null;
+                if ($request->hasFile('foto_before')) {
+                    $pathFoto = $request->file('foto_before')->store('peminjaman/before', 'public');
+                }
 
                 $peminjaman = \App\Models\Peminjaman::create([
                     'user_id'           => Auth::id(),
                     'ruangan_lab'       => $request->ruangan_lab,
                     'tujuan_penggunaan' => $request->tujuan,
                     'foto_before'       => $pathFoto,
-                    'waktu_pinjam'      => now(),
+                    'waktu_mulai'       => $waktuMulai,
+                    'waktu_selesai'     => $request->waktu_selesai,
+                    'jenis_peminjaman'  => $jenis,
                     'status'            => 'pending',
+                    'waktu_pinjam'      => $waktuMulai,
                 ]);
 
                 if (!$peminjaman || !$peminjaman->id) {
@@ -177,15 +189,18 @@ class PeminjamanController extends Controller
                 }
             }
 
+            $statusBaru = $pinjam->foto_before ? 'ongoing' : 'booking';
             // Update status menjadi 'ongoing'
             $pinjam->update([
-                'status' => 'ongoing',
+                'status' => $statusBaru,
                 'penerima_id' => Auth::id()
             ]);
 
             return response()->json([
-                'status' => 'sukses',
-                'message' => 'Peminjaman disetujui. Stok alat konsumsi telah dikurangi (jika ada).'
+            'status' => 'sukses',
+            'message' => $statusBaru === 'ongoing' 
+                ? 'Peminjaman disetujui & sedang berlangsung.' 
+                : 'Pesanan disetujui. Menunggu mahasiswa mengambil alat (Check-in).'
             ]);
         });
     }
@@ -200,7 +215,7 @@ class PeminjamanController extends Controller
         $pinjam = Peminjaman::findOrFail($id);
 
         // Keamanan: Pastikan hanya peminjaman yang sudah disetujui yang bisa upload foto
-        if ($pinjam->status !== 'approved') {
+        if ($pinjam->status !== 'booking') {
             return response()->json(['message' => 'Peminjaman belum disetujui staff atau sudah berjalan.'], 400);
         }
 
