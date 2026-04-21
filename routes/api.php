@@ -31,6 +31,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/alat/{id}', [AlatController::class, 'update']);
         Route::delete('/alat/{id}', [AlatController::class, 'destroy']);
         Route::post('/peminjaman/{id}/setujui', [PeminjamanController::class, 'setujui']);
+        Route::post('/peminjaman/{id}/tolak', [PeminjamanController::class, 'tolak']);
         Route::get('/peminjaman/semua', [PeminjamanController::class, 'index']); 
         Route::get('/peminjaman/monitor-riwayat', [PeminjamanController::class, 'index']);
         Route::get('/peminjaman/laporan-rusak', [PeminjamanController::class, 'laporanRusak']);

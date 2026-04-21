@@ -19,8 +19,6 @@ return new class extends Migration
             $table->string('foto_after')->nullable();  
             $table->dateTime('waktu_pinjam')->nullable();
             $table->dateTime('waktu_kembali')->nullable();
-            $table->dateTime('tanggal_diambil')->nullable();  
-            $table->dateTime('tanggal_kembali')->nullable(); 
             $table->timestamps();
         });
     }

@@ -86,8 +86,11 @@ class PeminjamanController extends Controller
                 }
 
 
-                $waktuMulai = $request->waktu_mulai ?? now();
-                $jenis = $request->waktu_mulai ? 'pesanan' : 'langsung';
+                $isPemesanan = $request->filled('waktu_mulai');
+                $jenis = $isPemesanan ? 'pesanan' : 'langsung';
+                $waktuMulai   = $isPemesanan ? $request->waktu_mulai : null;
+                $waktuSelesai = $isPemesanan ? $request->waktu_selesai : null;
+                $waktuPinjam = $isPemesanan ? null : now();
 
                 $pathFoto = null;
                 if ($request->hasFile('foto_before')) {
@@ -103,7 +106,7 @@ class PeminjamanController extends Controller
                     'waktu_selesai'     => $request->waktu_selesai,
                     'jenis_peminjaman'  => $jenis,
                     'status'            => 'pending',
-                    'waktu_pinjam'      => $waktuMulai,
+                    'waktu_pinjam'      => $waktuPinjam,
                 ]);
 
                 if (!$peminjaman || !$peminjaman->id) {
@@ -205,6 +208,39 @@ class PeminjamanController extends Controller
         });
     }
 
+    // STAFF: Menolak Pengajuan Peminjaman
+    public function tolak(Request $request, $id)
+    {
+        // Validasi alasan penolakan
+        $request->validate([
+            'alasan' => 'required|string|max:255'
+        ], [
+            'alasan.required' => 'Alasan penolakan wajib diisi.'
+        ]);
+
+        return DB::transaction(function () use ($id, $request) {
+            $pinjam = \App\Models\Peminjaman::findOrFail($id);
+
+            // Hanya bisa menolak jika status masih pending
+            if ($pinjam->status !== 'pending') {
+                return response()->json(['message' => 'Hanya pengajuan pending yang dapat ditolak.'], 400);
+            }
+
+            // Update status menjadi rejected
+            $pinjam->update([
+                'status' => 'rejected',
+                'alasan_penolakan' => $request->alasan,
+                'penerima_id' => Auth::id() 
+            ]);
+
+            return response()->json([
+                'status' => 'sukses',
+                'message' => 'Peminjaman berhasil ditolak.',
+                'alasan' => $request->alasan
+            ]);
+        });
+    }
+
     // MAHASISWA: Upload Foto Sebelum (Ubah status ke Ongoing)
     public function uploadBefore(Request $request, $id)
     {
@@ -214,7 +250,6 @@ class PeminjamanController extends Controller
 
         $pinjam = Peminjaman::findOrFail($id);
 
-        // Keamanan: Pastikan hanya peminjaman yang sudah disetujui yang bisa upload foto
         if ($pinjam->status !== 'booking') {
             return response()->json(['message' => 'Peminjaman belum disetujui staff atau sudah berjalan.'], 400);
         }
@@ -226,7 +261,7 @@ class PeminjamanController extends Controller
 
             $pinjam->update([
                 'foto_before' => $path,
-                'waktu_kembali' => now(),
+                'waktu_pinjam' => now(),
                 'status' => 'ongoing' 
             ]);
 
@@ -266,7 +301,6 @@ class PeminjamanController extends Controller
                     'kondisi_kembali' => $request->kondisi_kembali,
                     'deskripsi_kerusakan' => $request->deskripsi_kerusakan,
                     'waktu_kembali' => now(),
-                    'tanggal_kembali' => now(),
                 ]);
 
                 // Kembalikan stok alat
@@ -306,7 +340,7 @@ class PeminjamanController extends Controller
                             'kode_tag' => ($firstDetail && $firstDetail->alat) ? $firstDetail->alat->kode_tag : '-',
                             'ruangan_lab' => $pinjam->ruangan_lab, 
                             'deskripsi_kerusakan' => $pinjam->deskripsi_kerusakan ?? 'Tidak ada deskripsi',
-                            'tanggal_kembali' => $pinjam->tanggal_kembali,
+                            'waktu_kembali' => $pinjam->waktu_kembali,
                             'foto_before' => $pinjam->foto_before ? asset('storage/' . $pinjam->foto_before) : null,
                             'foto_after' => $pinjam->foto_after ? asset('storage/' . $pinjam->foto_after) : null,
                         ];
@@ -328,7 +362,7 @@ class PeminjamanController extends Controller
     // RIWAYAT MAHASISWA
     public function riwayatMahasiswa()
     {
-            $riwayat = Peminjaman::with('details.alat')
+            $riwayat = Peminjaman::with(['details.alat', 'penerima'])
                 ->where('user_id', Auth::id())
                 ->latest()
                 ->get();

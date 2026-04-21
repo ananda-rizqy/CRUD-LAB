@@ -17,7 +17,7 @@ public function riwayatDosen()
 {
     try {
         // Ambil relasi details.alat karena alat ada di dalam detail peminjaman
-        $riwayat = Peminjaman::with(['user', 'details.alat'])
+        $riwayat = Peminjaman::with(['user', 'details.alat', 'penerima'])
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($item) {
@@ -26,7 +26,6 @@ public function riwayatDosen()
                     'nama_mahasiswa' => $item->user->name ?? 'User Tidak Ada',
                     'nim' => $item->user->nim_nip ?? '-',
                     
-                    // Karena satu tiket bisa banyak alat ambil semua nama alatnya
                     'details' => $item->details->map(function ($detail) {
                         return [
                             'alat' => [
@@ -40,9 +39,12 @@ public function riwayatDosen()
                     'status' => $item->status,    
                     'kondisi_kembali' => $item->kondisi_kembali,
                     'created_at' => $item->created_at, 
-                    'waktu_kembali' => $item->tanggal_kembali, 
+                    'waktu_pinjam' => $item->waktu_pinjam, 
+                    'waktu_kembali' => $item->waktu_kembali, 
                     'foto_before' => $item->foto_before, 
                     'foto_after' => $item->foto_after,
+                    'penerima' => $item->penerima,
+                    'alasan_penolakan' => $item->alasan_penolakan,
                 ];
             });
 

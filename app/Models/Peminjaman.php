@@ -15,25 +15,23 @@ class Peminjaman extends Model
         'user_id',            
         'ruangan_lab',
         'tujuan_penggunaan',
-        'status',             // pending, approved, ongoing, returned
+        'status',             // pending, approved, ongoing, returned, booking, rejected
         'kondisi_kembali',
         'deskripsi_kerusakan',
+        'alasan_penolakan', 
+        'penerima_id',
         'foto_before',
         'foto_after',
         'waktu_mulai',    
         'waktu_selesai',  
         'jenis_peminjaman', 
         'waktu_pinjam',       
-        'waktu_kembali',      
-        'tanggal_diambil',    
-        'tanggal_kembali',    
+        'waktu_kembali',         
     ];
 
     protected $casts = [
         'waktu_pinjam' => 'datetime',
         'waktu_kembali' => 'datetime',
-        'tanggal_diambil' => 'datetime',
-        'tanggal_kembali' => 'datetime',
     ];
 
     /**
@@ -47,5 +45,10 @@ class Peminjaman extends Model
     public function details()
     {
         return $this->hasMany(PeminjamanDetails::class, 'peminjaman_id');
+    }
+
+    public function penerima()
+    {
+        return $this->belongsTo(User::class, 'penerima_id');
     }
 }
