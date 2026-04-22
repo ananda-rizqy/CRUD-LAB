@@ -12,11 +12,16 @@ class AlatController extends Controller
 
     // Tambahkan daftar ruangan yang diizinkan agar konsisten
     protected $daftarRuangan = [
-        'Laboratorium Barat'            => 'Gedung Elektronika',
-        'Laboratorium Timur'            => 'Gedung Telekomunikasi',
-        'Ruang Broadcast'               => 'Gedung UPT Bahasa', 
-        'Laboratorium Jaringan Komputer'=> 'Gedung Magister Terapan',
-        // 'Laboratorium IOT'=> 'Gedung Magister Terapan',
+        'Lab. TK Barat I/01'            => 'Gedung Elektronika',
+        'Lab. TK Barat I/02'            => 'Gedung Elektronika',
+        'Lab. TK Barat I/04'            => 'Gedung Elektronika',
+        'Lab. TK Timur I/01'            => 'Gedung Telekomunikasi',
+        'Lab. TK Timur I/02'            => 'Gedung Telekomunikasi',
+        'Lab. TK Timur II/01'           => 'Gedung Telekomunikasi',
+        'Lab. Komp. (MST lt 2)'         => 'Gedung Magister Terapan',
+        'Lab. IoT (MST lt 3)'           => 'Gedung Magister Terapan',
+        'Lab. BC 01 (UPT lt 3)'         => 'Gedung UPT Bahasa', 
+        'Lab. BC 02 (UPT lt 3)'         => 'Gedung UPT Bahasa', 
     ];
 
     // Endpoint baru untuk Frontend mengambil daftar dropdown

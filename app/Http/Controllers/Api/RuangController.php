@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\PenggunaanRuang;
 use Illuminate\Support\Facades\Storage;
-use Carbon\Carbon; // Penting untuk urusan waktu
+use Carbon\Carbon; 
 
 class RuangController extends Controller
 {
@@ -26,7 +26,6 @@ class RuangController extends Controller
 
         try {
             // 2. Konversi format Datetime agar MySQL tidak error
-            // Ini akan merubah '2026-03-12T13:51' menjadi '2026-03-12 13:51:00'
             $jamMulai = Carbon::parse($request->jam_mulai)->format('Y-m-d H:i:s');
             $jamSelesai = Carbon::parse($request->jam_selesai)->format('Y-m-d H:i:s');
 
@@ -35,7 +34,7 @@ class RuangController extends Controller
 
             // 4. Create Data
             $penggunaan = PenggunaanRuang::create([
-                'user_id'       => $request->user()->id, // Lebih simpel pakai auth()->id()
+                'user_id'       => $request->user()->id, 
                 'laboratorium'  => $request->laboratorium,
                 'kondisi_masuk' => $request->kondisi_masuk,
                 'keperluan'     => $request->keperluan,
@@ -73,7 +72,7 @@ class RuangController extends Controller
             $penggunaan->update([
                 'kondisi_keluar' => $request->kondisi_keluar,
                 'foto_after'     => $path,
-                'waktu_keluar'   => now(), // Mengisi timestamp waktu keluar saat ini
+                'waktu_keluar'   => now(), 
             ]);
 
             return response()->json([

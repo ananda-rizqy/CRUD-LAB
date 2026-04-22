@@ -16,6 +16,7 @@ return new class extends Migration
             $table->string('kode_tag')->unique()->nullable();
             $table->integer('jumlah')->default(1);
             $table->enum('kondisi', ['Baik', 'Rusak'])->default('Baik');  
+            $table->boolean('is_aset')->default(1);
             $table->timestamps();
         });
     }
