@@ -10,12 +10,12 @@ return new class extends Migration
     public function up(): void
     {
         // Menambahkan 'approved' ke dalam daftar ENUM
-        DB::statement("ALTER TABLE peminjaman MODIFY COLUMN status ENUM('pending', 'approved', 'ongoing', 'returned', 'rejected', 'booking') DEFAULT 'pending'");
+        DB::statement("ALTER TABLE peminjaman MODIFY COLUMN status ENUM('menunggu', 'disetujui', 'berlangsung', 'selesai', 'ditolak', 'dipesan') DEFAULT 'menunggu'");
     }
 
     public function down(): void
     {
         // Kembalikan ke kondisi sebelumnya jika diperlukan
-        DB::statement("ALTER TABLE peminjaman MODIFY COLUMN status ENUM('pending', 'ongoing', 'returned', 'rejected', 'booking') DEFAULT 'pending'");
+        DB::statement("ALTER TABLE peminjaman MODIFY COLUMN status ENUM('menunggu', 'berlangsung', 'selesai', 'ditolak', 'dipesan') DEFAULT 'menunggu'");
     }
 };

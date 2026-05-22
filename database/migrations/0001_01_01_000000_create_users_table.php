@@ -15,9 +15,15 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('nim_nip')->unique()->nullable();
-            $table->enum('role', ['mahasiswa', 'dosen', 'staff']);
+            $table->enum('role', ['mahasiswa', 'tendik', 'dosen']);
             $table->string('email')->unique();
-            $table->timestamp('email_verified_at')->nullable();
+            $table->string('kelas')->nullable(); 
+            $table->string('prodi')->nullable(); 
+            $table->string('jenjang')->nullable(); 
+            $table->string('jurusan')->nullable(); 
+            $table->string('gelar_depan')->nullable(); 
+            $table->string('gelar_belakang')->nullable(); 
+            $table->text('api_token_kampus')->nullable();
             $table->string('password');
             $table->rememberToken();
             $table->timestamps();

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\RandomizerController;
 use App\Http\Controllers\Api\AlatController;
 use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\PeminjamanController;
@@ -11,9 +12,9 @@ use App\Http\Controllers\Api\QrController;
 use App\Models\PenggunaanRuang;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
+use Random\Randomizer;
 
-// / Menggunakan endpoint /auth/google agar lebih jelas bahwa ini login via SSO
-Route::post('/auth/google', [AuthController::class, 'loginGoogle']);
+Route::post('/auth/sync', [AuthController::class, 'loginAndSyncSSO']);
 Route::get('/generate-qr-pintu', [QrController::class, 'generatePintuMasuk']);
 
 // --- RUTE TERPROTEKSI (Harus Login via SSO/Sanctum) ---
@@ -21,12 +22,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/alat', [AlatController::class, 'index']);
     Route::get('/alat/{id}', [AlatController::class, 'show']);
     Route::get('/ruangan-list', [AlatController::class, 'getRuanganList']);
+    Route::get('/jadwal', [RandomizerController::class, 'index']);
+    Route::get('/mahasiswa', [RandomizerController::class, 'getMahasiswaKampus']);
 
     //FITUR DEVICE
     Route::apiResource("device", DeviceController::class);
 
-    // Khusus role staff: Bisa melakukan Tambah, Edit, dan Hapus
-    Route::middleware('role:staff')->group(function () {
+    // Khusus role tendik: Bisa melakukan Tambah, Edit, dan Hapus
+    Route::middleware('role:tendik')->group(function () {
         Route::post('/alat', [AlatController::class, 'store']);
         Route::put('/alat/{id}', [AlatController::class, 'update']);
         Route::delete('/alat/{id}', [AlatController::class, 'destroy']);
@@ -35,7 +38,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/peminjaman/semua', [PeminjamanController::class, 'index']); 
         Route::get('/peminjaman/monitor-riwayat', [PeminjamanController::class, 'index']);
         Route::get('/peminjaman/laporan-rusak', [PeminjamanController::class, 'laporanRusak']);
-        Route::get('/staff/riwayat-ruang', [RuangController::class, 'riwayatStaff']);
+        Route::get('/tendik/riwayat-ruang', [RuangController::class, 'riwayatTendik']);
     });
 
     // Khusus role dosen:riwayat peminjaman dan penggunaan ruang
@@ -44,15 +47,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/dosen/pantau-ruang', [RiwayatruangController::class, 'riwayatDosen']);
     });
 
-    // Khusus role mahasiswa
-    Route::middleware('role:mahasiswa')->group(function () {
+        // Khusus role mahasiswa
+        Route::middleware('role:mahasiswa')->group(function () {
         // daftar pinjaman aktif 
         Route::get('/peminjaman/aktif', function() {
             return App\Models\Peminjaman::with('alat')
                 ->where('user_id', Auth::id())
                 ->orderBy('created_at', 'desc')
                 ->get();
-            });
+        });
         //upload foto alat before
         Route::post('/peminjaman/{id}/upload-before', [App\Http\Controllers\Api\PeminjamanController::class, 'uploadBefore']);
         //Mengajukan, Upload Foto, dan Mengembalikan

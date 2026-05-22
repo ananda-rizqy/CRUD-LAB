@@ -39,7 +39,7 @@ class AlatController extends Controller
 
         $query = Alat::query(); 
 
-        // 1. FILTER BERDASARKAN GEDUNG
+        // FILTER BERDASARKAN GEDUNG
         if ($lab_group) {
             $ruanganTerkait = array_keys($this->daftarRuangan, $lab_group);
             if (!empty($ruanganTerkait)) {
@@ -49,7 +49,7 @@ class AlatController extends Controller
             }
         }
 
-        // 2. Filter Pencarian
+        // Filter Pencarian
         if ($search) {
             $query->where(function($q) use ($search) {
                 $q->where('nama_alat', 'like', "%{$search}%")
@@ -58,17 +58,18 @@ class AlatController extends Controller
             });
         }
 
-        if ($role !== 'staff') {
+        if ($role !== 'tendik') {
             $query->where('kondisi', 'baik')->where('jumlah', '>', 0);
         }
 
-        // 4. Response untuk Staff/Dosen
-        if ($role === 'staff' || $role === 'dosen' || ($role === 'mahasiswa' && !$lab_group)) {
+        // Response untuk Tendik/Dosen
+        if ($role === 'tendik' || $role === 'dosen' || ($role === 'mahasiswa' && !$lab_group)) {
             $data = $query->latest()->get();
             return response()->json($data, 200);
         }
 
-        // 5. Response Agregasi (Pilihan Alat Mahasiswa)
+
+        // Response Agregasi (Pilihan Alat Mahasiswa)
         $dataAgregasi = Alat::where('kondisi', 'baik')
         ->when($lab_group, function($q) use ($ruanganTerkait, $lab_group) {
             return !empty($ruanganTerkait) ? $q->whereIn('letak', $ruanganTerkait) : $q->where('letak', 'like', "%{$lab_group}%");
@@ -79,13 +80,13 @@ class AlatController extends Controller
         ->withCount([
             'peminjamanDetails as sedang_dipinjam_count' => function ($q) {
                 $q->whereHas('peminjaman', function ($sub) {
-                    $sub->whereIn(DB::raw('LOWER(status)'), ['pending', 'approved', 'ongoing', 'disetujui', 'dipinjam', 'booking']);
+                    $sub->whereIn(DB::raw('LOWER(status)'), ['menunggu', 'disetujui', 'berlangsung', 'disetujui', 'dipesan']);
                 });
             }
         ])
         ->withSum(['peminjamanDetails as total_qty_dipinjam' => function ($q) {
             $q->whereHas('peminjaman', function ($sub) {
-                $sub->whereIn(DB::raw('LOWER(status)'), ['pending', 'approved', 'ongoing', 'disetujui', 'dipinjam', 'booking']);
+                $sub->whereIn(DB::raw('LOWER(status)'), ['menunggu', 'disetujui', 'berlangsung', 'disetujui', 'dipesan']);
         });
         }], 'jumlah_pinjam') 
         ->get();
@@ -199,7 +200,7 @@ class AlatController extends Controller
     }
 
     public function destroy($id)
-{
+    {
     try {
         $alat = Alat::findOrFail($id);
 
@@ -230,4 +231,5 @@ class AlatController extends Controller
         ], 500);
     }
 }
+
 }

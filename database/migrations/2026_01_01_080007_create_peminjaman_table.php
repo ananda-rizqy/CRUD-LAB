@@ -14,7 +14,7 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
             $table->string('ruangan_lab');
             $table->text('tujuan_penggunaan');
-            $table->enum('status', ['pending', 'approved', 'ongoing', 'returned', 'rejected', 'booking'])->default('pending');
+            $table->enum('status', ['menunggu', 'disetujui', 'berlangsung', 'selesai', 'ditolak', 'dipesan'])->default('menunggu');
             $table->string('foto_before')->nullable(); 
             $table->string('foto_after')->nullable();  
             $table->dateTime('waktu_pinjam')->nullable();

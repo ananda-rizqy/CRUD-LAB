@@ -45,12 +45,11 @@ class Alat extends Model
     
     static::saving(function ($alat) {
         if ($alat->is_aset) {
-            $alat->jumlah = 1; // paksa aset selalu 1
+            $alat->jumlah = 1; 
         }
     });
     }
 
-    // Accessor untuk format tanggal agar rapi di JSON
     public function getCreatedAtAttribute($value)
     {
         return $value ? date('Y-m-d H:i:s', strtotime($value)) : null;

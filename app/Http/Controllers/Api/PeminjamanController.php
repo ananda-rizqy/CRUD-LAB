@@ -64,7 +64,7 @@ class PeminjamanController extends Controller
 
                             $isBusy = \App\Models\PeminjamanDetails::where('alat_id', $unit->id)
                                 ->whereHas('peminjaman', function ($q) {
-                                    $q->whereIn('status', ['pending', 'approved', 'ongoing']);
+                                    $q->whereIn('status', ['menunggu', 'disetujui', 'berlangsung']);
                                 })
                                 ->exists();
 
@@ -105,7 +105,7 @@ class PeminjamanController extends Controller
                     'waktu_mulai'       => $waktuMulai,
                     'waktu_selesai'     => $request->waktu_selesai,
                     'jenis_peminjaman'  => $jenis,
-                    'status'            => 'pending',
+                    'status'            => 'menunggu',
                     'waktu_pinjam'      => $waktuPinjam,
                 ]);
 
@@ -157,12 +157,12 @@ class PeminjamanController extends Controller
         }
     }
 
-    // STAFF: Melihat semua daftar pinjaman
+    // TENDIK: Melihat semua daftar pinjaman
     public function index()
     {
         // Mengambil data peminjaman beserta detail alat di dalamnya
         $peminjaman = Peminjaman::with(['user', 'details.alat'])
-            ->orderByRaw("FIELD(status, 'pending', 'approved', 'ongoing', 'returned', 'rejected')")
+            ->orderByRaw("FIELD(status, 'menunggu', 'disetujui', 'berlangsung', 'selesai', 'ditolak')")
             ->latest()
             ->get();
 
@@ -172,14 +172,14 @@ class PeminjamanController extends Controller
         ]);
     }
 
-    // STAFF: Menyetujui Pengajuan (Sekaligus Potong Stok Semua Alat)
+    // TENDIK: Menyetujui Pengajuan (Sekaligus Potong Stok Semua Alat)
     public function setujui($id)
     {
         return DB::transaction(function () use ($id) {
             $pinjam = \App\Models\Peminjaman::with('details.alat')->findOrFail($id);
 
-            if ($pinjam->status !== 'pending') {
-                return response()->json(['message' => 'Status bukan pending.'], 400);
+            if ($pinjam->status !== 'menunggu') {
+                return response()->json(['message' => 'Status bukan menunggu.'], 400);
             }
 
             foreach ($pinjam->details as $detail) {
@@ -192,8 +192,7 @@ class PeminjamanController extends Controller
                 }
             }
 
-            $statusBaru = $pinjam->foto_before ? 'ongoing' : 'booking';
-            // Update status menjadi 'ongoing'
+            $statusBaru = $pinjam->foto_before ? 'berlangsung' : 'dipesan';
             $pinjam->update([
                 'status' => $statusBaru,
                 'penerima_id' => Auth::id()
@@ -201,14 +200,14 @@ class PeminjamanController extends Controller
 
             return response()->json([
             'status' => 'sukses',
-            'message' => $statusBaru === 'ongoing' 
+            'message' => $statusBaru === 'berlangsung' 
                 ? 'Peminjaman disetujui & sedang berlangsung.' 
                 : 'Pesanan disetujui. Menunggu mahasiswa mengambil alat (Check-in).'
             ]);
         });
     }
 
-    // STAFF: Menolak Pengajuan Peminjaman
+    // TENDIK: Menolak Pengajuan Peminjaman
     public function tolak(Request $request, $id)
     {
         // Validasi alasan penolakan
@@ -221,14 +220,14 @@ class PeminjamanController extends Controller
         return DB::transaction(function () use ($id, $request) {
             $pinjam = \App\Models\Peminjaman::findOrFail($id);
 
-            // Hanya bisa menolak jika status masih pending
-            if ($pinjam->status !== 'pending') {
+            // Hanya bisa menolak jika status masih menunggu
+            if ($pinjam->status !== 'menunggu') {
                 return response()->json(['message' => 'Hanya pengajuan pending yang dapat ditolak.'], 400);
             }
 
             // Update status menjadi rejected
             $pinjam->update([
-                'status' => 'rejected',
+                'status' => 'ditolak',
                 'alasan_penolakan' => $request->alasan,
                 'penerima_id' => Auth::id() 
             ]);
@@ -241,7 +240,7 @@ class PeminjamanController extends Controller
         });
     }
 
-    // MAHASISWA: Upload Foto Sebelum (Ubah status ke Ongoing)
+    // MAHASISWA: Upload Foto Sebelum (Ubah status ke berlangsung)
     public function uploadBefore(Request $request, $id)
     {
         $request->validate([
@@ -250,8 +249,8 @@ class PeminjamanController extends Controller
 
         $pinjam = Peminjaman::findOrFail($id);
 
-        if ($pinjam->status !== 'booking') {
-            return response()->json(['message' => 'Peminjaman belum disetujui staff atau sudah berjalan.'], 400);
+        if ($pinjam->status !== 'dipesan') {
+            return response()->json(['message' => 'Peminjaman belum disetujui tendik atau sudah berjalan.'], 400);
         }
 
         if ($request->hasFile('foto_before')) {
@@ -262,11 +261,11 @@ class PeminjamanController extends Controller
             $pinjam->update([
                 'foto_before' => $path,
                 'waktu_pinjam' => now(),
-                'status' => 'ongoing' 
+                'status' => 'berlangsung' 
             ]);
 
             return response()->json([
-                'status' => 'success',
+                'status' => 'sukses',
                 'message' => 'Foto berhasil diunggah. Selamat praktikum!',
                 'data' => $pinjam
             ]);
@@ -288,7 +287,7 @@ class PeminjamanController extends Controller
             return DB::transaction(function () use ($request, $id) {
                 $pinjam = Peminjaman::with('details.alat')->findOrFail($id);
 
-                if ($pinjam->status !== 'ongoing') {
+                if ($pinjam->status !== 'berlangsung') {
                     return response()->json(['message' => 'Alat belum diambil atau sudah dikembalikan.'], 400);
                 }
 
@@ -296,7 +295,7 @@ class PeminjamanController extends Controller
                 $path = $file->store('peminjaman/after', 'public');
                 
                 $pinjam->update([
-                    'status' => 'returned',
+                    'status' => 'selesai',
                     'foto_after' => $path,
                     'kondisi_kembali' => $request->kondisi_kembali,
                     'deskripsi_kerusakan' => $request->deskripsi_kerusakan,
@@ -317,7 +316,7 @@ class PeminjamanController extends Controller
             });
     }
 
-    //Laporan Kerusakan Staff
+    //Laporan Kerusakan Tendik
     public function laporanRusak()
     {
             try {
@@ -326,7 +325,6 @@ class PeminjamanController extends Controller
                     ->orderBy('updated_at', 'desc')
                     ->get()
                     ->map(function ($pinjam) {
-                        // Ambil semua nama alat dalam tiket ini
                         $daftarAlat = $pinjam->details->map(function($det) {
                             return $det->alat->nama_alat ?? 'Alat';
                         })->implode(', ');
@@ -335,7 +333,6 @@ class PeminjamanController extends Controller
 
                         return [
                             'id' => $pinjam->id,
-                            'nama_mahasiswa' => $pinjam->user->name ?? 'N/A',
                             'nama_alat' => $daftarAlat,
                             'kode_tag' => ($firstDetail && $firstDetail->alat) ? $firstDetail->alat->kode_tag : '-',
                             'ruangan_lab' => $pinjam->ruangan_lab, 
@@ -343,8 +340,14 @@ class PeminjamanController extends Controller
                             'waktu_kembali' => $pinjam->waktu_kembali,
                             'foto_before' => $pinjam->foto_before ? asset('storage/' . $pinjam->foto_before) : null,
                             'foto_after' => $pinjam->foto_after ? asset('storage/' . $pinjam->foto_after) : null,
-                        ];
-                    });
+                            'user' => $pinjam->user ? [
+                                'id' => $pinjam->user->id,
+                                'name' => $pinjam->user->name,
+                                'nim_nip' => $pinjam->user->nim_nip,
+                                'email' => $pinjam->user->email,
+                        ] : null,
+                    ];
+                });
 
                 return response()->json([
                     'status' => 'sukses',

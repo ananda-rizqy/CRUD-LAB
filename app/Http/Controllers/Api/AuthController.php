@@ -5,104 +5,146 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Google\Client;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
-    public function loginGoogle(Request $request)
+    public function loginAndSyncSSO(Request $request)
     {
         $request->validate([
-            'token' => 'required',
+            'email' => 'required',
+            'password' => 'required',
         ]);
 
-        try {
-            $client = new Client(['client_id' => env('GOOGLE_CLIENT_ID')]);
-            $payload = $client->verifyIdToken($request->token);
+        if ($request->email === 'dummy.tendik' && $request->password === 'tendik123') {
+            $user = User::updateOrCreate(
+                ['nim_nip' => '197505032007011001'],
+                [
+                    'name' => 'ABDUL SUNARNO (DUMMY LOCAL)',
+                    'email' => 'abdul.sunarno@polines.ac.id',
+                    'role' => 'tendik',
+                    'jurusan' => 'Teknik Elektro',
+                    'gelar_belakang' => 'S.Kom',
+                    'password' => bcrypt(Str::random(16)),
+                ]
+            );
+            
+            $user->refresh();
 
-            if (!$payload) {
-                return response()->json([
-                    'status' => 'error', 
-                    'message' => 'Token Google tidak valid.'
-                ], 401);
-            }
-
-            $email = strtolower($payload['email']);
-            $fullName = $payload['name']; 
-            $parts = explode('@', $email);
-            $prefix = $parts[0];
-            $domain = $parts[1];
-            $nimOnly = preg_replace('/[^0-9]/', '', $prefix);
-
-            $user = User::where('email', $email)->first();
-
-            if (!$user) {
-                $role = null;
-
-                //Khusus akun staff
-                $allowedStaff = [
-                    'staff.labtelkom@gmail.com',
-                ];
-
-                // Cek Dosen berdasarkan domain kampus
-                if ($domain === 'dosen.polines.ac.id') {
-                    $role = 'dosen';
-                } 
-                
-                // Cek Staff (Misal menggunakan gmail umum sesuai kodinganmu)
-                elseif ($domain === 'gmail.com' && in_array($email, $allowedStaff)) {
-                    $role = 'staff';
-                } 
-                // Cek Mahasiswa berdasarkan prefix NIM
-                elseif (str_starts_with($nimOnly, '431') || str_starts_with($nimOnly, '333')) {
-                    $role = 'mahasiswa';
-                }
-
-                // Proteksi: Jika role tidak terdeteksi, tolak akses (agar tidak error di frontend)
-                if (!$role) {
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Email Anda tidak terdaftar dalam kategori Civitas Akademika.'
-                    ], 403);
-                }
-
-                $user = User::create([
-                    'email'    => $email,
-                    'name'     => $fullName, 
-                    'nim_nip'  => $nimOnly,
-                    'role'     => $role,
-                    'password' => null, 
-                ]);
-            } else {
-                // Jika user SUDAH ADA, update nama/nim tapi JANGAN timpa role-nya
-                $user->update([
-                    'name'    => $fullName,
-                    'nim_nip' => $nimOnly,
-                ]);
-            }
-
-            //Generate Token Baru
-            $user->tokens()->delete(); 
-            $token = $user->createToken('auth_token')->plainTextToken;
-
-            //Return Response Final
             return response()->json([
-                'status'  => 'sukses',
-                'message' => "Selamat Datang, " . $user->name,
-                'user'    => [
-                    'id'      => $user->id,
-                    'name'    => $user->name,
-                    'email'   => $user->email,
-                    'role'    => $user->role, 
-                    'nim_nip' => $user->nim_nip
-                ],
-                'token'   => $token
+                'success' => true,
+                'message' => 'Login Dummy Sukses (Simulation Mode)',
+                'token' => $user->createToken('labToken')->plainTextToken,
+                'user' => $user
+            ]);
+        }
+
+        try {
+            $baseUrl = 'https://presensi.polines.ac.id/api/telekomunikasi';
+
+            // 1. Jalankan Login Utama ke Kampus
+            $loginResponse = Http::post("{$baseUrl}/login", [
+                'email' => trim($request->email),
+                'password' => $request->password,
+            ]);
+
+            if (!$loginResponse->successful() || !$loginResponse->json()['success']) {
+                return response()->json(['success' => false, 'message' => 'Kredensial SIMADU Salah.'], 401);
+            }
+
+            $campusData = $loginResponse->json()['data'];
+            $tokenKampus = $campusData['token'];
+            $userKampus = $campusData['user'];
+            $emailPolines = $userKampus['email_polines'];
+            $identityNumber = $userKampus['email']; 
+
+            $profileData = [
+                'name' => explode('.', $emailPolines)[0], 
+                'role' => 'mahasiswa',
+                'kelas' => null, 'prodi' => null, 'jenjang' => null, 'jurusan' => 'Teknik Elektro',
+                'gelar_depan' => null, 'gelar_belakang' => null
+            ];
+
+            if (Str::contains($emailPolines, 'mhs.polines.ac.id')) {
+                $mhsRes = Http::withToken($tokenKampus)->get("{$baseUrl}/mahasiswa");
+                
+                if ($mhsRes->successful()) {
+                    $cleanIdentity = str_replace('.', '', $identityNumber);
+                    
+                    $detail = collect($mhsRes->json()['data'])->first(function ($value) use ($identityNumber, $cleanIdentity) {
+                        $cleanNimKampus = str_replace('.', '', $value['nim'] ?? '');
+                        return $value['nim'] === $identityNumber || $cleanNimKampus === $cleanIdentity;
+                    });
+
+                    if ($detail) {
+                        $profileData['name'] = $detail['nama'];
+                        $profileData['role'] = 'mahasiswa'; 
+                        $profileData['kelas'] = $detail['kelas'];
+                        $profileData['prodi'] = $detail['prodi'];
+                        $profileData['jenjang'] = $detail['jenjang'];
+                        $profileData['jurusan'] = $detail['jurusan'];
+                    }
+                }
+            } else {
+                $dosenRes = Http::withToken($tokenKampus)->get("{$baseUrl}/dosen");
+                $detailDosen = collect($dosenRes->json()['data'] ?? [])->firstWhere('nip', $identityNumber);
+
+                if ($detailDosen) {
+                    $profileData['name'] = $detailDosen['nama'];
+                    $profileData['role'] = 'dosen';
+                    $profileData['prodi'] = $detailDosen['prodi'];
+                    $profileData['jenjang'] = $detailDosen['jenjang'];
+                    $profileData['jurusan'] = $detailDosen['jurusan'];
+                    $profileData['gelar_depan'] = $detailDosen['gelar_depan'];
+                    $profileData['gelar_belakang'] = $detailDosen['gelar_belakang'];
+                } else {
+                    // Jika tidak ada di dosen, maka dipastikan dia adalah Tendik
+                    $tendikRes = Http::withToken($tokenKampus)->get("{$baseUrl}/tendik");
+                    $detailTendik = collect($tendikRes->json()['data'] ?? [])->firstWhere('nip', $identityNumber);
+                    
+                    if ($detailTendik) {
+                        $profileData['name'] = $detailTendik['nama'];
+                        $profileData['role'] = 'tendik';
+                        $profileData['gelar_depan'] = $detailTendik['gelar_depan'];
+                        $profileData['gelar_belakang'] = $detailTendik['gelar_belakang'];
+                    }
+                }
+            }
+
+            $localUser = User::updateOrCreate(
+                ['nim_nip' => $identityNumber],
+                [
+                    'name' => $profileData['name'],
+                    'email' => $emailPolines,
+                    'role' => $profileData['role'],
+                    'kelas' => $profileData['kelas'],
+                    'prodi' => $profileData['prodi'],
+                    'jenjang' => $profileData['jenjang'],
+                    'jurusan' => $profileData['jurusan'],
+                    'gelar_depan' => $profileData['gelar_depan'],
+                    'gelar_belakang' => $profileData['gelar_belakang'],
+                    'api_token_kampus' => $tokenKampus, 
+                    'password' => bcrypt(Str::random(16)), 
+                ]
+            );
+
+            $localUser->refresh(); 
+
+            $localToken = $localUser->createToken('polinesLabToken')->plainTextToken;
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Autentikasi terpusat dan sinkronisasi profil berhasil.',
+                'token' => $localToken,
+                'user' => $localUser
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
-                'status'  => 'error',
-                'message' => 'Terjadi kesalahan server: ' . $e->getMessage()
+                'success' => false,
+                'message' => 'Gagal terhubung dengan server pusat SSO SIMADU.',
+                'error' => $e->getMessage()
             ], 500);
         }
     }

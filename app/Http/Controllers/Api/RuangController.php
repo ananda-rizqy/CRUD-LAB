@@ -125,7 +125,7 @@ class RuangController extends Controller
         }
     }
 
-    public function riwayatStaff()
+    public function riwayatTendik()
     {
         try {
             $riwayat = PenggunaanRuang::with('user')

@@ -5,17 +5,18 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
+
 class User extends Authenticatable
 {
-    use HasFactory, Notifiable;
+    // PERBAIKAN: Menggabungkan semua trait dalam satu baris yang rapi (tidak duplikat)
     use HasApiTokens, HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.
      *
-     * @var list<string>
+     * @var array<int, string>
      */
     protected $fillable = [
         'name',
@@ -23,14 +24,19 @@ class User extends Authenticatable
         'nim_nip',
         'role',
         'password',
-        'kelas_id',
-        'nim',
+        'kelas',
+        'prodi',
+        'jenjang',
+        'jurusan',
+        'gelar_depan',
+        'gelar_belakang',
+        'api_token_kampus',
     ];
 
     /**
      * The attributes that should be hidden for serialization.
      *
-     * @var list<string>
+     * @var array<int, string>
      */
     protected $hidden = [
         'password',

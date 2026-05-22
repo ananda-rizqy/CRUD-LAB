@@ -15,7 +15,7 @@ class Peminjaman extends Model
         'user_id',            
         'ruangan_lab',
         'tujuan_penggunaan',
-        'status',             // pending, approved, ongoing, returned, booking, rejected
+        'status',             
         'kondisi_kembali',
         'deskripsi_kerusakan',
         'alasan_penolakan', 

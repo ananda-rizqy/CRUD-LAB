@@ -12,7 +12,6 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        // Mendaftarkan alias middleware 'role' agar bisa digunakan di routes/api.php
         $middleware->alias([
             'role' => \App\Http\Middleware\CheckRole::class,
         ]);
